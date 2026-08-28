@@ -24,37 +24,38 @@ python server.py
 
 > 监听 `0.0.0.0:8790`：本机开发用 127.0.0.1 访问，部署到内网 / POPO 时其他机器可通过服务器 IP:8790 访问。
 
-## 部署到内网 / POPO（作者视角）
+## 部署（GitHub 模板方式）
 
-1. 在本地把 ai-eval 配置好（模型网关、人设、Skill），这些即成为「默认配置」。
-2. 将源码（不含 `data.db`，见下方安全说明）推送到部署仓库，在目标机器拉取：
+仓库自带一个 **模板 `data.db`**（不含密钥、不含评估历史）：
 
-   ```bash
-   git clone <仓库地址> && cd ai-eval
-   pip install -r requirements.txt
-   ```
+- **模型配置**：默认 Base URL = `https://oneapi-comate.baidu-int.com:443/v1`，API Key 已置空
+- **人设**：预置「太虚阁·Amber·衣橱主理人」作为默认人设
+- **Skill**：预置「数字人评估skill-0828」作为默认评估标准
+- **评估历史**：空表
 
-3. 初始化默认模型配置（网关需从目标机可达）：
+克隆后：
 
-   ```bash
-   curl -X POST http://<目标机IP>:8790/api/seed-default-config \
-     -H "Content-Type: application/json" \
-     -d '{"base_url": "http://model-gateway.xxx.com", "api_key": "sk-xxx", "port": null}'
-   ```
+```bash
+git clone <仓库地址> && cd ai-eval
+pip install -r requirements.txt
+python server.py
+```
 
-   默认人设 / Skill 可在管理页面上传，或在数据库中插入 `is_default=1` 的行。
-4. 启动服务：
+首次使用，在**设置页 → 模型配置**点击「使用我的配置」，填上自己的 API Key（或删除默认 URL 换成你自己的网关链接），保存后即可评估。默认配置展示但只读，改用自己的配置仅保存在本浏览器，不影响其他用户。
 
-   ```bash
-   python server.py
-   ```
-
-5. 浏览器访问 `http://<目标机IP>:8790`。若需经 POPO 分享给同事，可将该地址发给对方（内网可达即可）。
+服务监听 `0.0.0.0:8790`，内网机器访问 `http://<服务器IP>:8790` 即可，把地址发给同事即可用。
 
 ## 安全说明
 
-- **`data.db` 不提交到仓库**：其中 `model_config` 存有真实 API Key（默认网关密钥）。请勿把含密钥的 `data.db` 推到公开仓库；部署时改用 `/api/seed-default-config` 接口在目标机初始化。
-- 若在 GitHub 部署，请确认仓库为 **private**，避免密钥/评估数据外泄。
+- 仓库中的 `data.db` 为**模板**：`model_config.api_key` 已置空，不包含真实密钥与评估数据。
+- 本地开发产生的真实 `data.db` 请勿提交（gitignore 已排除 `data.db.bak` 等备份）。
+- 部署机若需在目标库写入默认网关配置（未用模板、空库场景），可用：
+
+  ```bash
+  curl -X POST http://<目标机IP>:8790/api/seed-default-config \
+    -H "Content-Type: application/json" \
+    -d '{"base_url": "http://model-gateway.xxx.com", "api_key": "sk-xxx", "port": null}'
+  ```
 
 ## 使用流程
 

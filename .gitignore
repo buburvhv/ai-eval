@@ -1,5 +1,6 @@
-# 数据与密钥：不提交，避免 API Key / 评估数据泄露
-data.db
+# 本地运行备份（含真实 API Key / 评估数据，勿提交）
+data.db.bak
+data.db.local
 
 # Python
 __pycache__/
