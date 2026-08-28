@@ -1,0 +1,177 @@
+/* ============================================================
+ * 评估报告卡（单列）样式
+ * 层级：Header → 总体问题 → 总分 → 六维表 → 主要问题 → 改进建议
+ * ============================================================ */
+
+/* 用户输入仍保留轻量气泡，仅表示“这是一次评估请求” */
+.eval-request {
+  max-width: 760px; margin: 0 auto 14px; padding: 10px 14px;
+  background: #eef3ff; border: 1px solid #dbe6ff; border-radius: 8px;
+  color: #2c4a8f; font-size: 13px; white-space: pre-wrap; word-break: break-word;
+}
+.eval-request .er-label { font-size: 11px; color: #7b93c9; margin-bottom: 3px; display: flex; gap: 6px; }
+
+.report-wrap { max-width: 1040px; margin: 0 auto 22px; }
+
+.report-card {
+  background: #fff; border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.report-card.parse-error { border-color: #f3cfcd; }
+
+/* --- 1. Header --- */
+.rc-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--line);
+}
+.rc-title {
+  display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; margin-right: 4px;
+}
+.rc-title .ai-badge {
+  width: 22px; height: 22px; border-radius: 6px; background: #17181c; color: #fff;
+  font-size: 10px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+}
+.rc-chip {
+  font-size: 11.5px; color: var(--muted); background: #f4f5f8; border: 1px solid var(--line);
+  border-radius: 6px; padding: 2px 8px; max-width: 220px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.rc-time { margin-left: auto; font-size: 11.5px; color: var(--muted); }
+
+/* --- 区块标题 --- */
+.rc-section { padding: 14px 20px; border-bottom: 1px solid var(--line); }
+.rc-section:last-child { border-bottom: none; }
+.rc-sec-title {
+  display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600;
+  margin-bottom: 10px; color: var(--text);
+}
+.rc-sec-title .dot { width: 6px; height: 6px; border-radius: 2px; flex: none; }
+.rc-sec-title.t-issue .dot { background: #e07a3f; }
+.rc-sec-title.t-score .dot { background: #3b6ef5; }
+.rc-sec-title.t-dims .dot { background: #17181c; }
+.rc-sec-title.t-problems .dot { background: #d9534f; }
+.rc-sec-title.t-suggest .dot { background: #1f9d61; }
+
+/* --- 2. 总体问题 --- */
+.rc-overall {
+  background: #fdf1ea; border: 1px solid #f5d9c8; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; color: #8a4b1f; line-height: 1.6;
+}
+.rc-overall.ok-plain { background: #f2f7f3; border-color: #d5e8da; color: #2f6b4f; }
+
+/* --- 3. 总分 --- */
+.rc-total-row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.rc-total-num { display: flex; align-items: baseline; gap: 4px; }
+.rc-total-num .num { font-size: 40px; font-weight: 700; line-height: 1; letter-spacing: -1px; }
+.rc-total-num .den { font-size: 16px; color: var(--muted); font-weight: 500; }
+.rc-grade {
+  font-size: 12px; font-weight: 600; border-radius: 6px; padding: 3px 10px;
+}
+.rc-grade.low { background: #fdefee; color: #c93832; }
+.rc-grade.mid { background: #fdf6e7; color: #b47b12; }
+.rc-grade.good { background: #e9f8f0; color: #1f9d61; }
+.rc-grade.unknown { background: #f1f3f6; color: var(--muted); }
+.rc-bar { flex: 1; min-width: 200px; }
+.rc-bar-track {
+  height: 8px; border-radius: 4px; background: #eef0f4; overflow: hidden;
+}
+.rc-bar-fill { height: 100%; border-radius: 4px; transition: width .5s ease; }
+.rc-bar-fill.low { background: #e2837f; }
+.rc-bar-fill.mid { background: #e5b95c; }
+.rc-bar-fill.good { background: #5cbf8b; }
+.rc-grade-note { font-size: 11.5px; color: var(--muted); margin-top: 5px; }
+
+/* --- 4. 六维评分表 --- */
+.dims-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dims-table th {
+  text-align: left; font-size: 11.5px; color: var(--muted); font-weight: 500;
+  padding: 0 10px 8px; border-bottom: 1px solid var(--line);
+}
+.dims-table td { padding: 9px 10px; border-bottom: 1px solid #f2f3f6; vertical-align: middle; }
+.dims-table tr:last-child td { border-bottom: none; }
+.dims-table tr.dim-bad td { background: #fdf6f5; }
+.dims-table .dim-name { font-weight: 500; white-space: nowrap; }
+.dims-table .dim-score { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dims-table .dim-score .bad { color: #c93832; font-weight: 600; }
+.dims-table .dim-score .full { color: #1f9d61; }
+.dims-table .dim-flag {
+  font-size: 11px; border-radius: 5px; padding: 1px 7px; margin-left: 8px; white-space: nowrap;
+}
+.dims-table .dim-flag.warn { background: #fdf1ea; color: #b35c17; }
+.dims-table .dim-flag.critical { background: #fdefee; color: #c93832; }
+.dims-table .dim-issue { color: var(--muted); font-size: 12.5px; }
+.dims-table .dim-issue .ok { color: #8a919c; }
+.dims-table .dim-issue .round { color: #b35c17; margin-right: 6px; font-size: 11.5px; }
+
+/* --- 5. 主要问题 --- */
+.main-issues { display: flex; flex-direction: column; gap: 8px; }
+.mi-item {
+  display: flex; gap: 10px; align-items: flex-start; padding: 9px 12px;
+  background: #fafbfc; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px;
+}
+.mi-item.sev-2 { border-left: 3px solid #d9534f; }
+.mi-item.sev-1 { border-left: 3px solid #e5a54b; }
+.mi-dim { flex: none; font-weight: 600; color: var(--text); }
+.mi-tag {
+  flex: none; font-size: 11px; border-radius: 5px; padding: 1px 7px;
+  background: #f1f3f6; color: var(--muted);
+}
+.mi-round { flex: none; font-size: 11px; color: #b35c17; }
+.mi-desc { color: #4a4f57; flex: 1; min-width: 0; }
+
+/* --- 6. 改进建议 --- */
+.suggest-box {
+  background: #eef8f4; border: 1px solid #cfe9df; border-radius: 8px; padding: 12px 14px;
+}
+.suggest-box ul { margin: 0; padding-left: 18px; }
+.suggest-box li { font-size: 13px; color: #22574a; line-height: 1.7; }
+
+/* --- 模型未按 JSON 返回时的原文展示卡 --- */
+.report-card.raw-card { border-color: #f0d9a8; }
+.raw-flag {
+  background: #fdf6e7; border-color: #ecd9a8; color: #b47b12; font-weight: 500;
+}
+.rc-section.raw-output {
+  white-space: pre-wrap; word-break: break-word; font-size: 13px;
+  color: var(--text); line-height: 1.7;
+}
+
+/* --- 解析异常兜底 --- */
+.parse-error-box {
+  background: #fdefee; border: 1px solid #f3cfcd; border-radius: 8px;
+  padding: 12px 14px; font-size: 13px; color: #a33;
+}
+.parse-error-box details { margin-top: 8px; }
+.parse-error-box summary { cursor: pointer; font-size: 12px; color: #a33; user-select: none; }
+.parse-error-box pre {
+  margin: 8px 0 0; padding: 10px; background: #fff; border: 1px solid #f3cfcd;
+  border-radius: 6px; font-size: 11.5px; white-space: pre-wrap; word-break: break-word;
+  max-height: 260px; overflow: auto; color: #6b3f3d;
+}
+
+/* --- 反馈行 --- */
+.rc-feedback {
+  display: flex; align-items: center; gap: 10px; padding: 12px 20px; background: #fafbfc;
+  border-top: 1px solid var(--line);
+}
+.rc-feedback .fb-ask { font-size: 12px; color: var(--muted); }
+.fb-btn {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500;
+  padding: 5px 12px; border-radius: 7px; border: 1px solid var(--line-strong);
+  background: #fff; color: var(--muted); transition: all .12s;
+}
+.fb-btn:hover { border-color: var(--muted); color: var(--text); }
+.fb-btn.correct:hover, .fb-btn.correct.active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.fb-btn.incorrect:hover, .fb-btn.incorrect.active { border-color: var(--red); color: var(--red); background: var(--red-soft); }
+
+/* 评估中占位 */
+.eval-pending { max-width: 1040px; margin: 0 auto 22px; }
+.eval-pending .report-card { min-height: 120px; }
+.eval-pending .rc-header { border-bottom: none; }
+.typing { display: inline-flex; align-items: center; gap: 4px; }
+.typing i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite;
+}
+.typing i:nth-child(2) { animation-delay: .2s; }
+.typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
