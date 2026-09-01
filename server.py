@@ -2,7 +2,10 @@
 import csv
 import io
 import os
+import shutil
+import sys
 import sqlite3
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,9 +18,15 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from urllib.parse import urlsplit
 
-BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get("AI_EVAL_DB", BASE_DIR / "data.db"))
-SKILL_DIR = BASE_DIR / "skills"
+IS_FROZEN = getattr(sys, "frozen", False)
+
+# 路径策略：
+# - 源码/打包内置资源（前端 static）：源码模式取当前目录；exe 模式取 PyInstaller 解包目录(_MEIPASS)
+# - 数据（data.db、skills 上传目录）：exe 模式放 exe 同级目录，可写、跨运行持久化；源码模式即项目目录
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+DATA_DIR = Path(sys.executable).resolve().parent if IS_FROZEN else BASE_DIR
+DB_PATH = Path(os.environ.get("AI_EVAL_DB", DATA_DIR / "data.db"))
+SKILL_DIR = DATA_DIR / "skills"
 STATIC_DIR = BASE_DIR / "static"
 
 # 模型网关常用端口，探测顺序按出现先后，用户可用“key;port”指定端口
@@ -95,6 +104,16 @@ def init_db() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # exe 首次运行：exe 同级还没有数据时，用打包内置的模板库初始化（开箱即有预置模型地址/人设/Skill）
+    if IS_FROZEN:
+        if not DB_PATH.exists():
+            tpl = BASE_DIR / "data.db.template"
+            if tpl.exists():
+                shutil.copy2(tpl, DB_PATH)
+        if not SKILL_DIR.exists():
+            pkg_skills = BASE_DIR / "skills"
+            if pkg_skills.exists():
+                shutil.copytree(pkg_skills, SKILL_DIR)
     init_db()
     SKILL_DIR.mkdir(exist_ok=True)
     yield
@@ -177,15 +196,17 @@ def _looks_like_openai_error(status: int, body: str) -> bool:
     return '"error"' in body or status in (401, 404)
 
 
-async def probe_models(base_url: str, api_key: str, port: int | None, timeout: float = 8.0) -> tuple[str, list[str]]:
-    """探测网关并返回 (实际生效的 base_url, 模型 id 列表)。失败抛 HTTPException。"""
+async def probe_models(base_url: str, api_key: str, port: int | None, timeout: float = 5.0, total_timeout: float = 15.0) -> tuple[str, list[str]]:
+    """探测网关并返回 (实际生效的 base_url, 模型 id 列表)。失败抛 HTTPException。
+    候选地址按优先级顺序探测：单次请求超时 timeout，总时长上限 total_timeout——
+    避免地址不可达时长时间卡住（此前最坏 10 个候选 × 8s = 80s）。"""
     base_url = normalize_base(base_url)
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     last_err = "无法连接到模型网关"
 
-    async def try_get(client: httpx.AsyncClient, url: str) -> tuple[bool, object]:
+    async def try_get(client: httpx.AsyncClient, url: str, t: float) -> tuple[bool, object]:
         try:
-            r = await client.get(f"{url}/models", headers=headers, timeout=timeout)
+            r = await client.get(f"{url}/models", headers=headers, timeout=t)
         except httpx.HTTPError:
             return False, None
         if r.status_code == 200:
@@ -201,7 +222,7 @@ async def probe_models(base_url: str, api_key: str, port: int | None, timeout: f
                 return True, data
             # 200 但拿不到模型列表：尝试 /v1/models
             try:
-                r2 = await client.get(f"{url}/v1/models", headers=headers, timeout=timeout)
+                r2 = await client.get(f"{url}/v1/models", headers=headers, timeout=t)
                 if r2.status_code == 200:
                     data2 = r2.json()
                     ids2 = _extract_model_ids(_parse_models_payload(data2))
@@ -214,9 +235,13 @@ async def probe_models(base_url: str, api_key: str, port: int | None, timeout: f
             return True, []  # 网关活着（OpenAI 兼容），只是 /models 未开放或无模型
         return False, None
 
+    deadline = time.monotonic() + total_timeout
     async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
         for url in _candidate_urls(base_url, port):
-            ok, result = await try_get(client, url)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            ok, result = await try_get(client, url, min(timeout, remaining))
             if ok:
                 return url, result
 
@@ -716,7 +741,21 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 if __name__ == "__main__":
+    import threading
+    import time
+    import webbrowser
     import uvicorn
 
+    # 端口可用环境变量 AI_EVAL_PORT 覆盖（打包测试等场景）；默认 8790
+    port = int(os.environ.get("AI_EVAL_PORT", "8790"))
+
+    if IS_FROZEN:
+        # exe 模式：启动后自动打开浏览器；控制台保留，Ctrl+C / 关闭窗口即退出
+        def _open_browser() -> None:
+            time.sleep(1.5)
+            webbrowser.open(f"http://127.0.0.1:{port}")
+
+        threading.Thread(target=_open_browser, daemon=True).start()
+
     # 监听 0.0.0.0：本机开发用 127.0.0.1 访问，部署到内网/POPO 时其他机器才能访问
-    uvicorn.run(app, host="0.0.0.0", port=8790, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

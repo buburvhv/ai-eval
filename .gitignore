@@ -15,3 +15,11 @@ _check.js
 # 本地环境
 .venv/
 venv/
+
+# PyInstaller 构建产物 / 分发包
+build/
+build_tmp/
+dist/
+release/
+*.spec
+data.db.template

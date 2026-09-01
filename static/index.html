@@ -113,6 +113,16 @@ input, textarea, select { font-family: inherit; }
 }
 .model-tip-bar b { font-weight: 600; }
 
+.gh-link {
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 500; color: var(--muted); text-decoration: none;
+  padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 8px;
+  background: #fff; transition: all .15s;
+}
+.gh-link:hover { border-color: var(--text); color: var(--text); }
+.gh-link svg { width: 15px; height: 15px; flex: none; }
+
 /* 消息流 */
 .msgs { flex: 1; overflow-y: auto; padding: 28px 0; }
 .msgs-inner { max-width: 860px; margin: 0 auto; padding: 0 24px; }
@@ -260,11 +270,23 @@ textarea { resize: vertical; min-height: 80px; }
 .btn.danger:hover { background: var(--red-soft); border-color: var(--red); }
 .btn.small { padding: 6px 12px; font-size: 12px; }
 
-.lock-tip, .user-tip {
-  font-size: 12px; border-radius: 8px; padding: 8px 12px; margin-bottom: 12px;
+/* 模型配置列表 */
+.cfg-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
+.cfg-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
+.cfg-row:last-child { border-bottom: none; }
+.cfg-row:hover { background: #fafbfc; }
+.cfg-row .cr-radio { flex: none; cursor: pointer; }
+.cfg-row .cr-main { flex: 1; min-width: 0; }
+.cfg-row .cr-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cfg-row .cr-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cfg-row .cr-active { font-size: 10.5px; color: var(--green); font-weight: 600; margin-left: 6px; }
+.cfg-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600; border-radius: 5px;
+  padding: 0 6px; margin-left: 6px; vertical-align: 1px;
 }
-.lock-tip { background: var(--amber-soft); border: 1px solid #ecd9a8; color: var(--amber); }
-.user-tip { background: var(--brand-soft); border: 1px solid #dbe6ff; color: var(--brand); }
+.cfg-badge.custom { background: var(--brand-soft); color: var(--brand); border: 1px solid #dbe6ff; }
+.cfg-form { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: #fafbfc; }
+.cfg-form .cfg-form-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
 .default-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600; border-radius: 5px;
   padding: 0 6px; margin-left: 6px; background: var(--amber-soft); color: var(--amber);
@@ -366,8 +388,12 @@ textarea { resize: vertical; min-height: 80px; }
       <select class="ctx-select" id="ctx-persona"><option value="">请选择（可选）</option></select>
       <span class="ctx-label">模型</span>
       <select class="ctx-select" id="ctx-model"><option value="">请选择</option></select>
+      <a class="gh-link" href="https://github.com/buburvhv/ai-eval" target="_blank" rel="noopener" title="项目 GitHub 主页，欢迎提 issue 联系我">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub
+      </a>
     </div>
-    <div class="model-tip-bar">💡 建议尽量选择 <b>deepseek</b> 或 <b>flash</b> 系列模型，作者的额度扛不住太贵的，感谢理解 🙏</div>
+    <div class="model-tip-bar" id="model-tip-bar">💡 建议尽量选择 <b>deepseek</b> 或 <b>flash</b> 系列模型，成本低效果也会好一点~</div>
     <div class="msgs" id="msgs">
       <div class="msgs-inner" id="msgs-inner">
         <div class="empty-state" id="empty-state">
@@ -405,38 +431,43 @@ textarea { resize: vertical; min-height: 80px; }
           <div class="c-icon">🧠</div>
           <div>
             <h3>模型配置</h3>
-            <div class="c-desc">默认配置由作者预置；你可自定义模型配置，仅保存在本浏览器，不影响其他用户</div>
+            <div class="c-desc">默认配置可直接修改 URL/Key，也可新增自己的配置；改动仅保存在本浏览器，互不影响</div>
           </div>
         </div>
-        <div class="lock-tip" id="cfg-lock-tip" style="display:none">
-          🔒 当前为作者内置默认配置，不可修改。可点击「使用我的配置」自定义（仅本浏览器生效）。
-        </div>
-        <div class="user-tip" id="cfg-user-tip" style="display:none">
-          ✏️ 正在使用你的自定义配置（仅保存在本浏览器）
-        </div>
-        <div class="field">
-          <label>Base URL</label>
-          <input type="text" id="cfg-base" placeholder="如：http://model-gateway.xxx.com 或 10.0.0.8:8080">
-          <span class="hint">支持 host / host:port / 带路径写法；端口留空自动探测</span>
-        </div>
+        <div class="cfg-list" id="cfg-list"></div>
         <div class="row">
-          <div class="field grow">
-            <label>API Key</label>
-            <input type="password" id="cfg-key" placeholder="网关鉴权 Key（可选）">
+          <button class="btn" id="btn-add-cfg">➕ 新增配置</button>
+          <button class="btn ghost" id="btn-refresh-models">重新获取模型列表</button>
+        </div>
+        <div class="cfg-form" id="cfg-form" style="display:none">
+          <div class="cfg-form-title" id="cfg-form-title">新增配置</div>
+          <div class="field" id="cfg-name-field">
+            <label>名称（可选）</label>
+            <input type="text" id="cfg-name" placeholder="如：DeepSeek / 公司网关">
           </div>
           <div class="field">
-            <label>端口（可选）</label>
-            <input type="number" id="cfg-port" placeholder="自动" style="width:120px">
+            <label>Base URL</label>
+            <input type="text" id="cfg-base" placeholder="如：http://model-gateway.xxx.com 或 10.0.0.8:8080">
+            <span class="hint">支持 host / host:port / 带路径写法；端口留空自动探测</span>
           </div>
-        </div>
-        <div class="row">
-          <button class="btn" id="btn-save-cfg">使用我的配置</button>
-          <button class="btn ghost" id="btn-restore-cfg" style="display:none">恢复默认配置</button>
-          <button class="btn ghost" id="btn-refresh-models">重新获取</button>
+          <div class="row">
+            <div class="field grow">
+              <label>API Key</label>
+              <input type="password" id="cfg-key" placeholder="网关鉴权 Key（可选）">
+            </div>
+            <div class="field">
+              <label>端口（可选）</label>
+              <input type="number" id="cfg-port" placeholder="自动" style="width:120px">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="btn-save-cfg">保存并获取模型列表</button>
+            <button class="btn ghost" id="btn-cancel-cfg">取消</button>
+          </div>
         </div>
         <div class="status" id="cfg-status"></div>
         <div class="field" style="margin-top:10px">
-          <label>测试调用（用所选模型验证连通）</label>
+          <label>测试调用（用「当前使用」的配置验证连通）</label>
           <div class="row">
             <select id="cfg-model" style="flex:1"><option value="">（先获取模型列表）</option></select>
             <button class="btn ghost" id="btn-test-chat">测试</button>
@@ -536,7 +567,13 @@ const api = {
       if (body instanceof FormData) { opt.body = body; }
       else { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
     }
-    const r = await fetch(url, opt);
+    let r;
+    try {
+      r = await fetch(url, opt);
+    } catch (e) {
+      if (e && e.name === 'AbortError') throw e;   // 用户主动停止：原样抛出
+      throw new Error('无法连接到本地服务：请确认程序窗口（黑色控制台）没有关闭、地址栏是 http://127.0.0.1:8790，然后刷新页面重试。');
+    }
     let data = null;
     try { data = await r.json(); } catch (e) { /* 非 JSON 响应 */ }
     if (!r.ok) {
@@ -819,10 +856,18 @@ function renderMessages(evals) {
           情绪价值/人设匹配/自然延展请根据任务合理查看，模型只是根据规则评判，借鉴可以请不要依赖。
         </div>
       </div>`;
+    syncModelTip();
     return;
   }
   evals.forEach(ev => inner.appendChild(msgNode(ev)));
   $('msgs').scrollTop = $('msgs').scrollHeight;
+  syncModelTip();
+}
+
+/** 黄条提示：仅在新对话（还没有任何评估记录）时显示，聊过一轮后隐藏 */
+function syncModelTip() {
+  const hasMsg = document.querySelector('#msgs-inner .msg') != null;
+  $('model-tip-bar').style.display = hasMsg ? 'none' : '';
 }
 
 function scrollBottom() {
@@ -924,6 +969,7 @@ async function sendEval() {
     if (tip) tip.style.display = 'inline';
   }, 300000);
   inner.appendChild(wrap);
+  syncModelTip();
   scrollBottom();
   $('input-text').value = '';
   autoGrow();
@@ -931,7 +977,7 @@ async function sendEval() {
   setSendState('pending');
 
   try {
-    const uc = lsGet(LS_CFG, null);
+    const uc = activeCfg();
     const d = await api.post('/api/eval', {
       model,
       base_url: uc && uc.base_url ? uc.base_url : null,
@@ -1084,8 +1130,8 @@ function fillModelSelect(models) {
   if (cur && models && models.includes(cur)) sel.value = cur;
 }
 
-/* ================= 设置页：模型（作者默认配置锁定只读 + 用户自定义存浏览器） ================= */
-const LS_CFG = 'ai_eval_user_cfg';        // 用户自定义模型配置（仅本浏览器）
+/* ================= 设置页：模型配置（默认可改 + 自有配置，均存本浏览器） ================= */
+const LS_CFG = 'ai_eval_user_cfg';        // 用户模型配置（仅本浏览器）
 const LS_SESSIONS = 'ai_eval_sessions';   // 历史会话（仅本浏览器，按用户浏览器隔离）
 
 function lsGet(key, fallback) {
@@ -1096,53 +1142,137 @@ function lsSet(key, val) {
   try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) { /* 隐私模式等场景静默失败 */ }
 }
 
-/** 默认（作者预置）配置，只读展示 */
+let defaultCfg = null;   // 服务端默认配置（作者预置）
+let cfgEditing = null;   // 表单正在编辑的对象：null=新增 | 'default' | 'custom:<id>'
+
+/** 本浏览器配置结构（v2）：
+ *  { override: {base_url,api_key,port}|null,   对默认配置的本地覆盖（不写服务端，互不影响）
+ *    customs:  [{id,name,base_url,api_key,port}],  自有配置
+ *    active:   'default' | 'custom:<id>' }          当前使用哪条 */
+function cfgState() {
+  const raw = lsGet(LS_CFG, null);
+  if (!raw) return { override: null, customs: [], active: 'default' };
+  if (raw.v === 2) return { override: raw.override || null, customs: raw.customs || [], active: raw.active || 'default' };
+  // v1 旧结构（单配置）：迁移为对默认配置的覆盖
+  return { override: raw && raw.base_url ? { base_url: raw.base_url, api_key: raw.api_key || '', port: raw.port || null } : null, customs: [], active: 'default' };
+}
+function saveCfgState(st) { lsSet(LS_CFG, { v: 2, override: st.override, customs: st.customs, active: st.active }); }
+
+/** 当前生效配置：返回 {base_url,api_key,port}；null 表示用服务端默认 */
+function activeCfg() {
+  const st = cfgState();
+  if (st.active && st.active.startsWith('custom:')) {
+    return st.customs.find(c => c.id === st.active.slice(7)) || null;
+  }
+  return st.override;
+}
+function keyMask(key) { return key ? '🔑 已填 Key' : '未填 Key'; }
+
+function renderCfgList() {
+  const box = $('cfg-list');
+  const st = cfgState();
+  box.innerHTML = '';
+  const rows = [];
+  if (defaultCfg) {
+    const eff = st.override || defaultCfg;
+    rows.push({ key: 'default', name: '默认配置', badge: 'default', meta: `${eff.base_url}${eff.port ? ' :' + eff.port : ''} · ${keyMask(eff.api_key)}`, active: st.active === 'default', overridden: !!st.override });
+  }
+  st.customs.forEach(c => {
+    rows.push({ key: 'custom:' + c.id, name: c.name || c.base_url, badge: 'custom', meta: `${c.base_url}${c.port ? ' :' + c.port : ''} · ${keyMask(c.api_key)}`, active: st.active === 'custom:' + c.id, overridden: false });
+  });
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty-tip">尚未配置模型网关：点击下方「新增配置」，填你自己的接口地址即可</div>';
+    return;
+  }
+  rows.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'cfg-row';
+    row.innerHTML = `
+      <input type="radio" name="cfg-active" class="cr-radio" title="设为当前使用" ${r.active ? 'checked' : ''}>
+      <div class="cr-main">
+        <div class="cr-name">${esc(r.name)}
+          ${r.badge === 'default' ? '<span class="default-badge">默认</span>' : '<span class="cfg-badge custom">自定义</span>'}
+          ${r.overridden ? '<span class="cr-active">· 已修改(本机)</span>' : ''}
+        </div>
+        <div class="cr-meta">${esc(r.meta)}</div>
+      </div>
+      <div class="lr-btns">
+        ${r.overridden ? '<button class="btn ghost small" data-act="restore">恢复默认</button>' : ''}
+        <button class="btn ghost small" data-act="edit">编辑</button>
+        ${r.badge === 'custom' ? '<button class="btn danger small" data-act="del">删除</button>' : ''}
+      </div>`;
+    row.querySelector('.cr-radio').onchange = async () => {
+      st.active = r.key; saveCfgState(st);
+      setStatus($('cfg-status'), r.key === 'default' ? '已切换为默认配置' : `已切换为「${r.name}」`, 'ok');
+      renderCfgList(); await refreshModels();
+    };
+    row.querySelector('[data-act=edit]').onclick = () => openCfgForm(r);
+    if (r.overridden) row.querySelector('[data-act=restore]').onclick = () => {
+      st.override = null; saveCfgState(st);
+      setStatus($('cfg-status'), '已恢复作者默认配置', 'ok');
+      renderCfgList(); refreshModels();
+    };
+    if (r.badge === 'custom') row.querySelector('[data-act=del]').onclick = () => {
+      const c = st.customs.find(x => x.id === r.key.slice(7));
+      if (!c) return;
+      if (!confirm(`确定删除配置「${c.name || c.base_url}」？`)) return;
+      st.customs = st.customs.filter(x => x.id !== c.id);
+      if (st.active === r.key) st.active = 'default';
+      saveCfgState(st);
+      setStatus($('cfg-status'), '已删除', 'ok');
+      renderCfgList(); refreshModels();
+    };
+    box.appendChild(row);
+  });
+}
+
+function openCfgForm(r) {
+  cfgEditing = r ? r.key : null;
+  const st = cfgState();
+  let cfg = null;
+  if (r) cfg = r.key === 'default' ? (st.override || defaultCfg) : st.customs.find(c => c.id === r.key.slice(7));
+  $('cfg-form-title').textContent = !r ? '新增配置' : (r.key === 'default' ? '编辑默认配置（改动仅保存在本浏览器，不影响其他用户）' : '编辑配置');
+  $('cfg-name-field').style.display = (r && r.key === 'default') ? 'none' : '';
+  $('cfg-name').value = (cfg && cfg.name) || '';
+  $('cfg-base').value = (cfg && cfg.base_url) || '';
+  $('cfg-key').value = (cfg && cfg.api_key) || '';
+  $('cfg-port').value = (cfg && cfg.port) || '';
+  $('cfg-form').style.display = 'block';
+  $('cfg-base').focus();
+}
+
+function closeCfgForm() { $('cfg-form').style.display = 'none'; cfgEditing = null; }
+
 async function loadModelConfig() {
   try {
     const d = await api.get('/api/model/config');
-    if (d.configured) {
-      $('cfg-base').value = d.base_url || '';
-      $('cfg-key').value = d.api_key || '';
-      $('cfg-port').value = d.port || '';
-      ['cfg-base', 'cfg-key', 'cfg-port'].forEach(id => { $(id).readOnly = true; $(id).disabled = true; });
-      $('cfg-lock-tip').style.display = 'block';
-      $('btn-save-cfg').style.display = 'none';
-      $('btn-restore-cfg').style.display = 'inline-block';
-    } else {
-      // 服务端没有默认配置（如新库）：允许当前用户填写并保存为默认
-      $('btn-restore-cfg').style.display = 'none';
-    }
-  } catch (e) { /* 忽略 */ }
-  // 用户自定义配置覆盖展示（只影响本浏览器）
-  const uc = lsGet(LS_CFG, null);
-  if (uc && uc.base_url) {
-    $('cfg-base').value = uc.base_url;
-    $('cfg-key').value = uc.api_key || '';
-    $('cfg-port').value = uc.port || '';
-    ['cfg-base', 'cfg-key', 'cfg-port'].forEach(id => { $(id).disabled = false; });
-    $('cfg-lock-tip').style.display = 'none';
-    $('btn-save-cfg').style.display = 'inline-block';
-    $('cfg-user-tip').style.display = 'block';
+    defaultCfg = d.configured ? { base_url: d.base_url, api_key: d.api_key, port: d.port } : null;
+  } catch (e) { defaultCfg = null; }
+  // 服务端没有默认配置（如新库）时，把旧版遗留的覆盖迁移为一条自有配置
+  const st = cfgState();
+  if (!defaultCfg && st.override) {
+    st.customs.unshift({ id: crypto.randomUUID().replace(/-/g, ''), name: '我的配置', base_url: st.override.base_url, api_key: st.override.api_key, port: st.override.port });
+    st.override = null; st.active = 'custom:' + st.customs[0].id;
+    saveCfgState(st);
   }
+  renderCfgList();
   await refreshModels();
 }
 
 async function refreshModels() {
-  // 优先用用户自定义配置拉模型列表，否则用服务端默认配置
-  const uc = lsGet(LS_CFG, null);
+  // 用「当前使用」的配置拉模型列表；无自定义时用服务端默认
+  const ac = activeCfg();
   let models = [];
   try {
-    if (uc && uc.base_url) {
-      const d = await api.post('/api/model/models', { base_url: uc.base_url, api_key: uc.api_key, port: uc.port });
-      models = d.models;
-    } else {
-      const d = await api.post('/api/model/models', {});
-      models = d.models;
-    }
+    const d = await api.post('/api/model/models', ac ? { base_url: ac.base_url, api_key: ac.api_key, port: ac.port } : {});
+    models = d.models;
   } catch (e) { /* 忽略，下方下拉显示空 */ }
   fillCfgModelSelect(models);
   fillModelSelect(models);
 }
+
+$('btn-add-cfg').onclick = () => openCfgForm(null);
+$('btn-cancel-cfg').onclick = () => { closeCfgForm(); };
 
 $('btn-save-cfg').onclick = async () => {
   const base = $('cfg-base').value.trim();
@@ -1155,27 +1285,31 @@ $('btn-save-cfg').onclick = async () => {
       base_url: base,
       api_key: $('cfg-key').value.trim(),
       port: parseInt($('cfg-port').value) || null,
+      name: $('cfg-name').value.trim() || '',
     };
-    const d = await api.post('/api/model/test', cfg);
+    const d = await api.post('/api/model/test', { base_url: cfg.base_url, api_key: cfg.api_key, port: cfg.port });
     cfg.base_url = d.base_url;
-    lsSet(LS_CFG, cfg);            // 只存本浏览器，不影响其他用户
-    $('cfg-base').value = d.base_url;
+    const st = cfgState();
+    if (cfgEditing === 'default') {
+      st.override = { base_url: cfg.base_url, api_key: cfg.api_key, port: cfg.port };
+      st.active = 'default';
+    } else if (cfgEditing && cfgEditing.startsWith('custom:')) {
+      const c = st.customs.find(x => x.id === cfgEditing.slice(7));
+      if (c) Object.assign(c, { name: cfg.name, base_url: cfg.base_url, api_key: cfg.api_key, port: cfg.port });
+    } else {
+      const id = crypto.randomUUID().replace(/-/g, '');
+      st.customs.push({ id, name: cfg.name, base_url: cfg.base_url, api_key: cfg.api_key, port: cfg.port });
+      st.active = 'custom:' + id;
+    }
+    saveCfgState(st);            // 只存本浏览器，不影响其他用户
+    closeCfgForm();
+    renderCfgList();
     fillCfgModelSelect(d.models);
     fillModelSelect(d.models);
-    $('cfg-user-tip').style.display = 'block';
-    setStatus($('cfg-status'), `✅ 连接成功，获取到 ${d.models.length} 个模型（${d.base_url}）。配置已保存到本浏览器。`, 'ok');
+    setStatus($('cfg-status'), `✅ 连接成功，获取到 ${d.models.length} 个模型（${d.base_url}）。已保存到本浏览器。`, 'ok');
   } catch (e) {
     setStatus($('cfg-status'), '❌ ' + e.message, 'err');
   } finally { setLoading(btn, false); }
-};
-
-/** 清除自定义配置，恢复作者默认 */
-$('btn-restore-cfg').onclick = async () => {
-  lsSet(LS_CFG, null);
-  localStorage.removeItem(LS_CFG);
-  $('cfg-user-tip').style.display = 'none';
-  setStatus($('cfg-status'), '已恢复默认配置', 'ok');
-  await loadModelConfig();
 };
 
 function fillCfgModelSelect(models) {
@@ -1205,9 +1339,9 @@ $('btn-test-chat').onclick = async () => {
   setLoading(btn, true, '测试中...');
   setStatus($('cfg-status'), '正在调用模型验证连通性...');
   try {
-    const uc = lsGet(LS_CFG, null);
+    const ac = activeCfg();
     const body = { model };
-    if (uc && uc.base_url) { body.base_url = uc.base_url; body.api_key = uc.api_key; body.port = uc.port; }
+    if (ac) { body.base_url = ac.base_url; body.api_key = ac.api_key; body.port = ac.port; }
     const d = await api.post('/api/model/test-chat', body);
     setStatus($('cfg-status'), `✅ 调用成功，模型回复：${d.reply}`, 'ok');
   } catch (e) {
