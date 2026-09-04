@@ -43,6 +43,8 @@ function toStr(v, fallback) {
 
 /**
  * 解析评估结果为统一报告结构。
+ * 结构异常不再静默归一化：把「缺失/非法字段、被修正的分数」收集进 warnings，
+ * 页面会以黄色提示条展示，提醒用户这份结果的格式并不完全可信。
  * @param {string} rawText 模型原始输出
  * @returns {{
  *   ok: boolean,
@@ -52,6 +54,7 @@ function toStr(v, fallback) {
  *   max_total: number,
  *   main_issues: {dimension: string, problem_type: string, score: number, description: string, round: number|null, evidence: string}[],
  *   suggestions: string[],
+ *   warnings: string[],
  *   raw: string
  * }}
  */
@@ -64,10 +67,13 @@ function parseEvalReport(rawText) {
     max_total: 0,
     main_issues: [],
     suggestions: [],
+    warnings: [],
     raw: rawText || '',
   };
   const obj = extractJsonObject(rawText);
   if (!obj || typeof obj !== 'object') return result;
+
+  const warn = (msg) => { if (!result.warnings.includes(msg)) result.warnings.push(msg); };
 
   // dimensions：至少要解析出一个带 name 的维度才算成功
   const dimsRaw = Array.isArray(obj.dimensions) ? obj.dimensions : [];
@@ -75,9 +81,14 @@ function parseEvalReport(rawText) {
     .filter(d => d && typeof d === 'object')
     .map(d => {
       const max = toInt(d.max_score, 2);
+      if (d.max_score === undefined || d.max_score === null) warn('部分维度缺少 max_score，已按 2 分补齐');
       let score = toInt(d.score, 0);
-      if (score < 0) score = 0;
-      if (score > max) score = max;
+      if (d.score === undefined || d.score === null) warn('部分维度缺少 score，已按 0 分处理');
+      if (score < 0) { warn('部分维度分数为负数，已修正为 0'); score = 0; }
+      if (score > max) { warn('部分维度分数超过满分，已按上限修正'); score = max; }
+      if (d.name === undefined || d.name === null || String(d.name).trim() === '') {
+        warn('部分维度缺少名称，已显示为「未知维度」');
+      }
       return {
         name: toStr(d.name, '未知维度'),
         score,
@@ -95,18 +106,26 @@ function parseEvalReport(rawText) {
   const issuesRaw = Array.isArray(obj.main_issues) ? obj.main_issues : [];
   const mainIssues = issuesRaw
     .filter(i => i && typeof i === 'object')
-    .map(i => ({
-      dimension: toStr(i.dimension, ''),
-      problem_type: toStr(i.problem_type, ''),
-      score: toInt(i.severity, null) ?? toInt(i.score, null),
-      description: toStr(i.description || i.evidence || '', ''),
-      round: i.round !== undefined && i.round !== null && Number.isFinite(Number(i.round)) && Number(i.round) > 0
-        ? Number(i.round) : null,
-      evidence: toStr(i.evidence, ''),
-    }));
+    .map(i => {
+      const sev = toInt(i.severity, null) ?? toInt(i.score, null);
+      if (sev === null) warn('部分主要问题缺少严重程度（severity/score）');
+      return {
+        dimension: toStr(i.dimension, ''),
+        problem_type: toStr(i.problem_type, ''),
+        score: sev,
+        description: toStr(i.description || i.evidence || '', ''),
+        round: i.round !== undefined && i.round !== null && Number.isFinite(Number(i.round)) && Number(i.round) > 0
+          ? Number(i.round) : null,
+        evidence: toStr(i.evidence, ''),
+      };
+    });
 
   const suggestions = (Array.isArray(obj.suggestions) ? obj.suggestions : [])
     .map(s => toStr(s, '').trim()).filter(Boolean);
+
+  if (obj.overall_issue === undefined || obj.overall_issue === null) warn('缺少总体问题（overall_issue）字段');
+  if (!Array.isArray(obj.main_issues)) warn('缺少主要问题（main_issues）数组');
+  if (!Array.isArray(obj.suggestions)) warn('缺少改进建议（suggestions）数组');
 
   result.ok = true;
   result.overall_issue = toStr(obj.overall_issue, '').trim();

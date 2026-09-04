@@ -358,6 +358,70 @@ textarea { resize: vertical; min-height: 80px; }
 ::-webkit-scrollbar-thumb { background: #d3d8e0; border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: #bcc3cd; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* --- 终态卡：已停止 / 评估失败 --- */
+.status-card.stopped { border-color: var(--line-strong); }
+.status-card.stopped .ai-badge { background: #6b7280; }
+.status-card.failed { border-color: #f3cfcd; }
+.status-card.failed .ai-badge { background: #d9534f; }
+.status-card .status-msg {
+  font-size: 13px; color: var(--text); line-height: 1.7; margin-bottom: 10px;
+  white-space: pre-wrap; word-break: break-word;
+}
+.status-card.failed .status-msg { color: #a33; }
+.retry-btn { margin-top: 2px; }
+.fb-btn.rc-retry { margin-left: auto; flex: none; }
+
+/* --- 结果格式警告条 --- */
+.rc-warn {
+  margin: 10px 20px 0; padding: 8px 12px; font-size: 12px; color: #8a5a13;
+  background: #fdf6e7; border: 1px solid #ecd9a8; border-radius: 8px; line-height: 1.6;
+}
+
+/* --- 等待计时 / 慢提示 --- */
+.eval-pending .wait-time { margin-top: 6px; font-variant-numeric: tabular-nums; }
+.eval-pending .slow-tip { color: #b47b12; }
+
+/* --- 反馈错误提示 --- */
+.fb-err { font-size: 12px; color: var(--red); flex: 1; min-width: 0; }
+
+/* --- 报告折叠 --- */
+.rc-toggle-row { padding: 0 20px 14px; }
+.rc-toggle {
+  width: 100%; padding: 8px 12px; font-size: 12.5px; color: var(--muted);
+  background: #f7f8fa; border: 1px dashed var(--line-strong); border-radius: 8px; cursor: pointer;
+}
+.rc-toggle:hover { color: var(--brand); border-color: var(--brand); }
+.rc-detail { display: none; }
+.rc-detail.open { display: block; }
+
+/* --- 会话操作（重命名 / 删除） --- */
+.session-item .s-ops { display: none; flex: none; gap: 2px; }
+.session-item:hover .s-ops { display: flex; }
+.s-op {
+  border: none; background: transparent; font-size: 12px; color: var(--muted);
+  border-radius: 6px; padding: 2px 5px; cursor: pointer; line-height: 1;
+}
+.s-op:hover { background: #e8ebf0; color: var(--text); }
+.s-op.danger:hover { background: var(--red-soft); color: var(--red); }
+.session-item .s-badge.pending { background: #eef3ff; color: #3b6ef5; }
+.session-item .s-badge.failed { background: var(--red-soft); color: var(--red); }
+.session-item .s-badge.aborted { background: #f1f3f6; color: var(--muted); }
+
+/* --- 模型列表为空的设置入口 --- */
+.ctx-hint-link {
+  font-size: 12px; color: var(--brand); cursor: pointer; text-decoration: none;
+  white-space: nowrap;
+}
+.ctx-hint-link:hover { text-decoration: underline; }
+
+/* --- API Key 显示/隐藏 --- */
+.key-row { display: flex; gap: 6px; align-items: center; }
+.key-row input { flex: 1; min-width: 0; }
+.key-row .btn.small { flex: none; }
+
+/* --- 空状态配置按钮 --- */
+.empty-state .btn { margin-top: 16px; }
 </style>
 </head>
 <body>
@@ -403,6 +467,7 @@ textarea { resize: vertical; min-height: 80px; }
             每次评估相互独立，不影响之前的判断；历史会话在左侧查看。<br>
             情绪价值/人设匹配/自然延展请根据任务合理查看，模型只是根据规则评判，借鉴可以请不要依赖。
           </div>
+          <button class="btn" id="btn-go-config-static">⚙️ 立即去配置</button>
         </div>
       </div>
     </div>
@@ -453,7 +518,10 @@ textarea { resize: vertical; min-height: 80px; }
           <div class="row">
             <div class="field grow">
               <label>API Key</label>
-              <input type="password" id="cfg-key" placeholder="网关鉴权 Key（可选）">
+              <div class="key-row">
+                <input type="password" id="cfg-key" placeholder="网关鉴权 Key（可选）">
+                <button class="btn ghost small" id="btn-toggle-key" type="button" title="切换明文显示">显示</button>
+              </div>
             </div>
             <div class="field">
               <label>端口（可选）</label>
@@ -627,7 +695,7 @@ const LS_CUR_SESSION = 'ai_eval_current_session';  // 当前会话 id（仅本�
 let currentSessionId = lsGet(LS_CUR_SESSION, null);  // 当前会话（评估写入该会话）
 let viewingSessionId = null;                         // 正在查看的会话
 let taskSeq = 0;                                     // 评估任务序号
-const tasks = new Map();                             // taskId -> AbortController（用于停止单个任务）
+const tasks = new Map();                             // taskId -> {ac, evalId, text, model, wrap, pending, timers}
 
 function rememberCurrentSession(id) {
   if (id) lsSet(LS_CUR_SESSION, id);
@@ -645,6 +713,33 @@ function newSession() {
 }
 
 /* ================= 消息渲染 ================= */
+/** 把原待评估文本带回输入框（不自动发送，用户可先换 Skill/人设/模型） */
+function fillInput(text) {
+  showPage('chat');
+  $('input-text').value = text || '';
+  autoGrow();
+  focusInput();
+}
+
+/** 终态卡：已停止 / 评估失败，带「带入输入框重评」入口 */
+function statusCard(ev, title, msg, cls) {
+  const div = document.createElement('div');
+  div.className = 'report-wrap';
+  div.innerHTML = `
+    <div class="report-card status-card ${cls}">
+      <div class="rc-header">
+        <div class="rc-title"><span class="ai-badge">AI</span>${esc(title)}</div>
+        <span class="rc-time">${esc(ev.model || '')}</span>
+      </div>
+      <div class="rc-section">
+        <div class="status-msg">${esc(msg)}</div>
+        <button class="fb-btn retry-btn" data-act="retry">↩ 带入输入框重评</button>
+      </div>
+    </div>`;
+  div.querySelector('[data-act=retry]').onclick = () => fillInput(ev.input_text);
+  return div;
+}
+
 /**
  * 一条评估记录 = 请求行（浅蓝条）+ 单列评估报告卡。
  * 优先用 parseEvalReport 渲染结构化报告；解析失败显示「评估结果解析异常」并保留原始输出。
@@ -661,8 +756,18 @@ function msgNode(ev, opts = {}) {
 
   if (opts.pending) return wrap;
 
-  // 发送即落库的占位记录（模型还没返回 / 请求中断）：显示「评估中」
+  // 没有结果：按服务端状态区分「评估中 / 已停止 / 评估失败」，不再永远转圈
   if (!ev.output_text) {
+    const st = ev.status || 'pending';
+    if (st === 'aborted') {
+      wrap.appendChild(statusCard(ev, '已停止', ev.error_message || '本次评估已停止。', 'stopped'));
+      return wrap;
+    }
+    if (st === 'failed') {
+      wrap.appendChild(statusCard(ev, '评估失败', ev.error_message || '模型调用失败，请检查网关配置后重试。', 'failed'));
+      return wrap;
+    }
+    // pending：仍在评估中（刷新页面后继续显示进行中）
     const pend = document.createElement('div');
     pend.className = 'eval-pending';
     pend.innerHTML = `
@@ -710,20 +815,28 @@ function msgNode(ev, opts = {}) {
   fb.innerHTML = `
     <span class="fb-ask">${fbVal ? '已标注：' : '评估是否正确？'}</span>
     <button class="fb-btn correct${fbVal === 'correct' ? ' active' : ''}">✓ 正确</button>
-    <button class="fb-btn incorrect${fbVal === 'incorrect' ? ' active' : ''}">✗ 不正确</button>`;
+    <button class="fb-btn incorrect${fbVal === 'incorrect' ? ' active' : ''}">✗ 不正确</button>
+    <span class="fb-err" style="display:none"></span>`;
   fb.querySelectorAll('.fb-btn').forEach(btn => {
     btn.onclick = async () => {
       if (!ev.id) return;
-      const act = btn.classList.contains('correct') ? 'correct' : 'incorrect';
+      const target = btn.classList.contains('correct') ? 'correct' : 'incorrect';
+      const isActive = btn.classList.contains('active');
+      const payload = isActive ? null : target;   // 再点已选项 = 撤销；点另一项 = 切换
       try {
-        const d = await api.post(`/api/eval/${ev.id}/feedback`, { feedback: act });
-        ev.feedback = d.feedback;
+        const d = await api.post(`/api/eval/${ev.id}/feedback`, { feedback: payload });
+        ev.feedback = d.feedback || null;
         fb.querySelectorAll('.fb-btn').forEach(b => {
-          b.classList.toggle('active', b.classList.contains(String(d.feedback)));
+          b.classList.toggle('active', b.classList.contains(String(ev.feedback)));
         });
-        fb.querySelector('.fb-ask').textContent = '已标注：';
-        await loadSessions();
-      } catch (e) { /* 静默失败 */ }
+        fb.querySelector('.fb-ask').textContent = ev.feedback ? '已标注：' : '评估是否正确？';
+        fb.querySelector('.fb-err').style.display = 'none';
+        await loadSessions(viewingSessionId || currentSessionId);
+      } catch (e) {
+        const err = fb.querySelector('.fb-err');
+        err.textContent = '标注失败：' + e.message;
+        err.style.display = 'inline';
+      }
     };
   });
   reportWrap.appendChild(fb);
@@ -748,8 +861,18 @@ function reportCard(ev, report) {
     <span class="rc-chip" title="Skill：${esc(ev.skill_name)}">📐 ${esc(ev.skill_name || '—')}</span>
     <span class="rc-chip" title="模型：${esc(ev.model)}">🧠 ${esc(ev.model)}</span>
     <span class="rc-chip" title="人设：${esc(ev.persona_name)}">👤 ${esc(ev.persona_name || '未提供')}</span>
-    <span class="rc-time">评估时间：${esc(ev.eval_at || '')}</span>`;
+    <span class="rc-time">评估时间：${esc(ev.eval_at || '')}</span>
+    <button class="fb-btn rc-retry" data-act="retry" type="button">↩ 重评</button>`;
+  head.querySelector('[data-act=retry]').onclick = () => fillInput(ev.input_text);
   card.appendChild(head);
+
+  // 结构异常提示：模型返回的 JSON 有缺失/非法字段被修正，提醒用户结果格式不完全可信
+  if (report.warnings && report.warnings.length) {
+    const warnBox = document.createElement('div');
+    warnBox.className = 'rc-warn';
+    warnBox.innerHTML = `<b>⚠ 结果格式不完全符合标准：</b>${report.warnings.map(w => esc(w)).join('；')}。原始输出仍可复核。`;
+    card.appendChild(warnBox);
+  }
 
   // --- 2. 总体问题 ---
   const secIssue = document.createElement('div');
@@ -839,7 +962,27 @@ function reportCard(ev, report) {
       <div class="rc-sec-title t-suggest"><span class="dot"></span>改进建议</div>
       <div class="hint">暂无改进建议</div>`;
   }
-  card.appendChild(secSug);
+
+  // --- 折叠区：六维评分 + 主要问题 + 改进建议 ---
+  // 默认只展示总体问题与总分，长会话下更易扫读；详细评分可一键展开
+  const detail = document.createElement('div');
+  detail.className = 'rc-detail';
+  detail.appendChild(secDims);
+  detail.appendChild(secProblems);
+  detail.appendChild(secSug);
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'rc-toggle';
+  toggle.textContent = '展开详细评分';
+  toggle.onclick = () => {
+    const open = detail.classList.toggle('open');
+    toggle.textContent = open ? '收起详细评分' : '展开详细评分';
+  };
+  const toggleRow = document.createElement('div');
+  toggleRow.className = 'rc-toggle-row';
+  toggleRow.appendChild(toggle);
+  card.appendChild(toggleRow);
+  card.appendChild(detail);
   return card;
 }
 
@@ -855,7 +998,9 @@ function renderMessages(evals) {
           每次评估相互独立，不影响之前的判断；历史会话在左侧查看。<br>
           情绪价值/人设匹配/自然延展请根据任务合理查看，模型只是根据规则评判，借鉴可以请不要依赖。
         </div>
+        <button class="btn" id="btn-go-config">⚙️ 立即去配置</button>
       </div>`;
+    $('btn-go-config').onclick = () => showPage('settings');
     syncModelTip();
     return;
   }
@@ -902,8 +1047,24 @@ function setSendState(state) {
 }
 
 function stopPendingAll() {
-  tasks.forEach(ac => { try { ac.abort(); } catch (e) { /* 忽略 */ } });
+  const running = [...tasks.values()];
+  running.forEach(t => {
+    // 先通知后端置为 aborted（迟到结果不会覆盖），再中止浏览器请求
+    api.post(`/api/eval/${t.evalId}/cancel`, {}).catch(() => {});
+    try { t.ac.abort(); } catch (e) { /* 忽略 */ }
+  });
   tasks.clear();
+  // 立即把「评估中」占位换成「已停止」卡，不残留转圈
+  running.forEach(t => {
+    if (!t.pending || !t.pending.isConnected) return;
+    const req = t.wrap.querySelector('.eval-request');
+    const wrap = document.createElement('div');
+    wrap.className = 'msg';
+    if (req) wrap.appendChild(req.cloneNode(true));
+    wrap.appendChild(statusCard({ model: t.model, input_text: t.text }, '已停止', '本次评估已停止。', 'stopped'));
+    t.wrap.replaceWith(wrap);
+  });
+  loadSessions(viewingSessionId || currentSessionId).catch(() => {});
 }
 
 async function sendEval() {
@@ -937,9 +1098,9 @@ async function sendEval() {
   rememberSession(sessionId);
 
   // 每个评估任务独立：可同时发多个，各自可停止
+  const evalId = crypto.randomUUID().replace(/-/g, '');
   const ac = new AbortController();
   const taskId = ++taskSeq;
-  tasks.set(taskId, ac);
 
   const inner = $('msgs-inner');
   if (inner.querySelector('.empty-state')) inner.innerHTML = '';
@@ -958,12 +1119,18 @@ async function sendEval() {
         <div class="rc-section" style="padding:26px 20px">
           <div class="typing"><i></i><i></i><i></i></div>
           <span class="hint">　模型正在按 Skill 标准逐轮评估，请稍候…</span>
+          <span class="hint wait-time">已等待 0 秒</span>
           <span class="hint slow-tip" style="display:none">　评估已超过 5 分钟，输出较慢，请再耐心等待一会…</span>
         </div>
       </div>
     </div>`;
   const pending = wrap.querySelector('.eval-pending');
-  // 超过 300 秒才提示“输出较慢”
+  // 已等待计时：每秒更新；超过 300 秒才提示“输出较慢”
+  const started = Date.now();
+  const tick = setInterval(() => {
+    const el = pending.querySelector('.wait-time');
+    if (el) el.textContent = `已等待 ${Math.floor((Date.now() - started) / 1000)} 秒`;
+  }, 1000);
   const slowTimer = setTimeout(() => {
     const tip = pending.querySelector('.slow-tip');
     if (tip) tip.style.display = 'inline';
@@ -976,6 +1143,8 @@ async function sendEval() {
   focusInput();
   setSendState('pending');
 
+  tasks.set(taskId, { ac, evalId, text, model, wrap, pending, timers: [tick, slowTimer] });
+
   try {
     const uc = activeCfg();
     const d = await api.post('/api/eval', {
@@ -987,35 +1156,42 @@ async function sendEval() {
       skill_id: skillId ? parseInt(skillId) : null,
       input_text: text,
       session_id: sessionId,
+      eval_id: evalId,
     }, ac.signal);
     tasks.delete(taskId);
     if (ac.signal.aborted) return;    // 停止后结果才回来：忽略
+    // 期间用户已切到别的会话：结果已由后端落入原会话，这里不再动当前视图
+    if (currentSessionId !== sessionId) return;
     currentSessionId = d.session_id;
     viewingSessionId = d.session_id;
     rememberCurrentSession(d.session_id);
     // 用真实结果替换占位（评估时间等元数据以服务端落库为准）
     const ev = {
       id: d.id, input_text: text, output_text: d.output,
-      eval_at: d.eval_at, model,
+      eval_at: d.eval_at, model, status: d.status || 'completed',
       skill_name: d.skill_name, persona_name: d.persona_name, feedback: null,
     };
-    wrap.replaceWith(msgNode(ev));
-    scrollBottom();
+    if (wrap.isConnected) {
+      wrap.replaceWith(msgNode(ev));
+      scrollBottom();
+    } else {
+      // 占位已被重绘（如切走又切回）：直接重载当前会话
+      const dd = await api.get(`/api/sessions/${sessionId}/evals`);
+      renderMessages(dd.evals || []);
+    }
     await loadSessions(viewingSessionId);
   } catch (e) {
     tasks.delete(taskId);
-    if (ac.signal.aborted || e.name === 'AbortError') return;  // 用户主动停止：不再渲染错误
-    pending.innerHTML = `
-      <div class="report-card parse-error">
-        <div class="rc-header">
-          <div class="rc-title"><span class="ai-badge">AI</span>评估失败</div>
-        </div>
-        <div class="rc-section">
-          <div class="parse-error-box">${esc(e.message)}</div>
-        </div>
-      </div>`;
-    scrollBottom();
+    if (ac.signal.aborted || e.name === 'AbortError') return;  // 停止路径由 stopPendingAll 渲染
+    // 失败：展示后端错误信息 + 重评入口（服务端已把该记录置为 failed）
+    if (currentSessionId === sessionId && wrap.isConnected) {
+      wrap.replaceWith(statusCard({ model, input_text: text }, '评估失败',
+        e.message || '模型调用失败，请检查网关配置后重试。', 'failed'));
+      scrollBottom();
+      await loadSessions(viewingSessionId);
+    }
   } finally {
+    clearInterval(tick);
     clearTimeout(slowTimer);
     if (!tasks.size) setSendState('idle');
   }
@@ -1045,6 +1221,12 @@ function rememberSession(sessionId) {
  * - 服务端：全量评估记录 + 人工标注（管理员可经 /api/evals/export 导出 CSV）
  * - 本浏览器 localStorage：只记录「本用户发起过的会话 id」，用于区分哪些是自己的会话
  */
+/** 从本浏览器索引中移除会话（删除会话后清理） */
+function forgetSession(sessionId) {
+  lsSet(LS_SESSIONS, lsGet(LS_SESSIONS, []).filter(s => s.session_id !== sessionId));
+  if (lsGet(LS_CUR_SESSION, null) === sessionId) rememberCurrentSession(null);
+}
+
 async function loadSessions(activeId) {
   const list = $('session-list');
   let serverSessions = [];
@@ -1063,6 +1245,11 @@ async function loadSessions(activeId) {
       const item = document.createElement('div');
       item.className = 'session-item';
       if (activeId && s.session_id === activeId) item.classList.add('active');
+      const stFlags = [
+        s.pending > 0 ? `<span class="s-badge pending">⏳ ${s.pending}</span>` : '',
+        s.failed > 0 ? `<span class="s-badge failed">✕ ${s.failed}</span>` : '',
+        s.aborted > 0 ? `<span class="s-badge aborted">■ ${s.aborted}</span>` : '',
+      ].join('');
       const badge = s.incorrect > 0
         ? `<span class="s-badge incorrect">✗ ${s.incorrect}</span>`
         : s.correct > 0
@@ -1070,12 +1257,17 @@ async function loadSessions(activeId) {
           : '';
       item.innerHTML = `
         <div class="s-body">
-          <div class="s-title">${esc(s.skill_name || '评估会话')}</div>
-          <div class="s-meta">${fmtTime(s.start_at)} · ${esc(s.model || '')}</div>
+          <div class="s-title">${esc(s.title || '未命名评估')}</div>
+          <div class="s-meta">${fmtTime(s.created_at)} · ${esc(s.model || '')}</div>
         </div>
-        ${badge}
-        <span class="s-count">${s.total} 条</span>`;
-      item.onclick = async () => {
+        ${stFlags}${badge}
+        <span class="s-count">${s.total} 条</span>
+        <div class="s-ops">
+          <button class="s-op" data-act="rename" title="重命名会话">✎</button>
+          <button class="s-op danger" data-act="del" title="删除会话">🗑</button>
+        </div>`;
+      item.onclick = async (e) => {
+        if (e.target.closest('.s-op')) return;   // 点操作按钮不切换会话
         showPage('chat');              // 从设置页点历史会话也能回到对话页
         document.querySelectorAll('.session-item').forEach(el => el.classList.remove('active'));
         item.classList.add('active');
@@ -1086,6 +1278,28 @@ async function loadSessions(activeId) {
           const dd = await api.get(`/api/sessions/${s.session_id}/evals`);
           renderMessages(dd.evals);
         } catch (e) { /* 忽略 */ }
+      };
+      item.querySelector('[data-act=rename]').onclick = async (e) => {
+        e.stopPropagation();
+        const name = prompt('新的会话名称：', s.title || '');
+        if (name === null) return;
+        try {
+          await api.put(`/api/sessions/${s.session_id}`, { title: name });
+          await loadSessions(viewingSessionId || currentSessionId);
+        } catch (err) { alert('重命名失败：' + err.message); }
+      };
+      item.querySelector('[data-act=del]').onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm(`确定删除会话「${s.title || '未命名评估'}」？其中 ${s.total} 条评估记录将一并删除。`)) return;
+        try {
+          await api.del(`/api/sessions/${s.session_id}`);
+          forgetSession(s.session_id);
+          if (currentSessionId === s.session_id) {
+            newSession();                // 删除的是当前会话：回到新会话
+          } else {
+            await loadSessions(viewingSessionId || currentSessionId);
+          }
+        } catch (err) { alert('删除失败：' + err.message); }
       };
       list.appendChild(item);
     });
@@ -1121,13 +1335,27 @@ async function loadCtxOptions() {
 function fillModelSelect(models) {
   const sel = $('ctx-model');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">请选择</option>';
+  const empty = !(models && models.length);
+  sel.innerHTML = empty ? '<option value="">暂无可用模型</option>' : '<option value="">请选择</option>';
   (models || []).forEach(m => {
     const o = document.createElement('option');
     o.value = m; o.textContent = m;
     sel.appendChild(o);
   });
   if (cur && models && models.includes(cur)) sel.value = cur;
+  // 列表为空（网关未配置/探测失败）时，在上下文栏给出可操作的设置入口
+  const hint = document.getElementById('ctx-model-hint');
+  if (empty) {
+    if (!hint) {
+      const a = document.createElement('a');
+      a.id = 'ctx-model-hint';
+      a.className = 'ctx-hint-link';
+      a.textContent = '⚙️ 去配置';
+      a.title = '还没有可用模型，去设置页配置模型网关';
+      a.onclick = () => showPage('settings');
+      sel.parentElement.appendChild(a);
+    }
+  } else if (hint) hint.remove();
 }
 
 /* ================= 设置页：模型配置（默认可改 + 自有配置，均存本浏览器） ================= */
@@ -1242,6 +1470,13 @@ function openCfgForm(r) {
 }
 
 function closeCfgForm() { $('cfg-form').style.display = 'none'; cfgEditing = null; }
+
+$('btn-toggle-key').onclick = () => {
+  const el = $('cfg-key');
+  const show = el.type === 'password';
+  el.type = show ? 'text' : 'password';
+  $('btn-toggle-key').textContent = show ? '隐藏' : '显示';
+};
 
 async function loadModelConfig() {
   try {
@@ -1530,7 +1765,20 @@ $('modal-preview').addEventListener('click', (e) => {
 
 /* ================= 初始化 ================= */
 (async function init() {
-  await Promise.all([loadCtxOptions(), loadSessions(), loadModelConfig(), loadPersonas(), loadSkills()]);
+  await Promise.all([loadCtxOptions(), loadModelConfig(), loadPersonas(), loadSkills()]);
+  // 恢复上次会话：加载其评估记录并高亮
+  const saved = lsGet(LS_CUR_SESSION, null);
+  if (saved) {
+    currentSessionId = saved;
+    viewingSessionId = saved;
+    await loadSessions(saved);
+    try {
+      const dd = await api.get(`/api/sessions/${saved}/evals`);
+      if (dd.evals && dd.evals.length) renderMessages(dd.evals);
+    } catch (e) { /* 会话可能已被删除：只保留侧栏列表 */ }
+  } else {
+    await loadSessions();
+  }
   $('app').classList.add('show');
   showPage('chat');
   focusInput();
