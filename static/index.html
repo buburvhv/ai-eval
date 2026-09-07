@@ -3,9 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI 评估助手</title>
-<link rel="stylesheet" href="/static/report.css">
-<script src="/static/report-parser.js"></script>
+<title>SkillLab</title>
+<script>
+/* 主题先行：渲染前读偏好（localStorage > 系统偏好），避免深色下白屏闪烁 */
+(function () {
+  try {
+    var t = localStorage.getItem('ai_eval_theme');
+    if (t !== 'light' && t !== 'dark') {
+      t = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+    document.documentElement.dataset.theme = t;
+  } catch (e) { document.documentElement.dataset.theme = 'light'; }
+})();
+</script>
+<link rel="stylesheet" href="/static/report.css?v=20260907d">
+<script src="/static/report-parser.js?v=20260907d"></script>
 <style>
 :root {
   --bg: #f7f8fa;
@@ -22,8 +34,42 @@
   --red-soft: #fdefee;
   --amber: #b47b12;
   --amber-soft: #fdf6e7;
+  --soft: #fafbfc;    /* 浅底容器 / 斑马纹 */
+  --chip: #f4f5f8;    /* chip / 徽标底 */
+  --hover: #f1f3f6;   /* 列表 hover */
+  --glass: rgba(255,255,255,.86);  /* 粘性顶栏毛玻璃 */
+  --faint: #b6bcc6;   /* 比 muted 更弱的提示文字 */
+  --brand-strong: #2f5ce0;  /* 品牌色 hover 加深 */
+  --brand-line: #dbe6ff;    /* 品牌浅底描边（输入请求气泡） */
+  --brand-ink: #2c4a8f;     /* 品牌浅底上的文字 */
   --shadow: 0 1px 2px rgba(23,24,28,.05), 0 4px 16px rgba(23,24,28,.06);
   --radius: 12px;
+}
+/* 深色模式：html[data-theme=dark]，跟随系统或手动切换 */
+[data-theme="dark"] {
+  --bg: #0f1014;
+  --panel: #17181c;
+  --line: #26282e;
+  --line-strong: #363943;
+  --text: #e8eaee;
+  --muted: #8f96a3;
+  --brand: #4a7dfb;
+  --brand-soft: #1c2a4a;
+  --green: #34c07a;
+  --green-soft: #12281c;
+  --red: #e5685f;
+  --red-soft: #33211f;
+  --amber: #d9a03f;
+  --amber-soft: #332815;
+  --soft: #1d1f24;
+  --chip: #222429;
+  --hover: #212329;
+  --glass: rgba(20,21,25,.88);
+  --faint: #5a616c;
+  --brand-strong: #5c8bfc;
+  --brand-line: #2b3a5e;
+  --brand-ink: #a5bdff;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 4px 16px rgba(0,0,0,.4);
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -56,7 +102,7 @@ input, textarea, select { font-family: inherit; }
 
 .new-chat-btn {
   margin: 0 14px 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-strong);
-  background: #fff; color: var(--text); font-size: 13px; font-weight: 500;
+  background: var(--panel); color: var(--text); font-size: 13px; font-weight: 500;
   display: flex; align-items: center; gap: 8px; transition: all .15s;
 }
 .new-chat-btn:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
@@ -67,7 +113,7 @@ input, textarea, select { font-family: inherit; }
   padding: 9px 12px; border-radius: 9px; cursor: pointer; margin-bottom: 2px;
   display: flex; align-items: center; gap: 8px;
 }
-.session-item:hover { background: #f1f3f6; }
+.session-item:hover { background: var(--hover); }
 .session-item.active { background: var(--brand-soft); }
 .session-item .s-body { flex: 1; min-width: 0; }
 .session-item .s-title {
@@ -76,10 +122,10 @@ input, textarea, select { font-family: inherit; }
 }
 .session-item .s-meta { font-size: 11px; color: var(--muted); margin-top: 1px; }
 .session-item .s-count {
-  flex: none; font-size: 11px; color: var(--muted); background: #f1f3f6;
+  flex: none; font-size: 11px; color: var(--muted); background: var(--hover);
   border-radius: 10px; padding: 1px 8px;
 }
-.session-item.active .s-count { background: #fff; }
+.session-item.active .s-count { background: var(--panel); }
 .session-item .s-badge { flex: none; font-size: 11px; padding: 1px 7px; border-radius: 8px; }
 .session-item .s-badge.correct { background: var(--green-soft); color: var(--green); }
 .session-item .s-badge.incorrect { background: var(--red-soft); color: var(--red); }
@@ -89,7 +135,7 @@ input, textarea, select { font-family: inherit; }
   width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px;
   border: none; background: transparent; border-radius: 9px; font-size: 13px; color: var(--text);
 }
-.foot-btn:hover { background: #f1f3f6; }
+.foot-btn:hover { background: var(--hover); }
 .foot-btn.active { background: var(--brand-soft); color: var(--brand); font-weight: 500; }
 
 /* ================= 主区 ================= */
@@ -102,13 +148,13 @@ input, textarea, select { font-family: inherit; }
 .ctx-label { font-size: 12px; color: var(--muted); flex: none; }
 .ctx-select {
   padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: 8px;
-  background: #fff; color: var(--text); font-size: 13px; min-width: 120px; max-width: 210px; outline: none;
+  background: var(--panel); color: var(--text); font-size: 13px; min-width: 120px; max-width: 210px; outline: none;
 }
 .ctx-select:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59,110,245,.12); }
 .ctx-select.warn { border-color: var(--amber); background: var(--amber-soft); }
 
 .model-tip-bar {
-  background: #fdf6e7; border-bottom: 1px solid #f0e2bd; color: var(--amber);
+  background: var(--amber-soft); border-bottom: 1px solid var(--line); color: var(--amber);
   font-size: 12px; padding: 6px 24px; text-align: center;
 }
 .model-tip-bar b { font-weight: 600; }
@@ -118,7 +164,7 @@ input, textarea, select { font-family: inherit; }
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 12.5px; font-weight: 500; color: var(--muted); text-decoration: none;
   padding: 6px 12px; border: 1px solid var(--line-strong); border-radius: 8px;
-  background: #fff; transition: all .15s;
+  background: var(--panel); transition: all .15s;
 }
 .gh-link:hover { border-color: var(--text); color: var(--text); }
 .gh-link svg { width: 15px; height: 15px; flex: none; }
@@ -132,6 +178,15 @@ input, textarea, select { font-family: inherit; }
 .empty-state .steps { font-size: 13px; line-height: 2; }
 
 .msg { margin-bottom: 22px; }
+
+/* 实时新消息 / 分割线 / 结果卡进场：淡入上滑（历史渲染不加） */
+.msg-enter { animation: msgIn .3s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes msgIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .msg-enter { animation: none; }
+  .card { opacity: 1; transform: none; transition: none; }
+  * { scroll-behavior: auto; }
+}
 .msg-user { display: flex; justify-content: flex-end; }
 .msg-model { display: flex; justify-content: flex-start; }
 
@@ -142,7 +197,7 @@ input, textarea, select { font-family: inherit; }
   box-shadow: 0 2px 8px rgba(59,110,245,.25);
 }
 .msg-model .bubble {
-  background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px;
   box-shadow: var(--shadow); font-size: 13.5px;
 }
 .model-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
@@ -153,7 +208,7 @@ input, textarea, select { font-family: inherit; }
 }
 .model-name { font-size: 12px; font-weight: 600; color: var(--text); }
 .chip {
-  font-size: 11px; color: var(--muted); background: #f4f5f8; border: 1px solid var(--line);
+  font-size: 11px; color: var(--muted); background: var(--chip); border: 1px solid var(--line);
   border-radius: 6px; padding: 1px 7px; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; max-width: 180px;
 }
@@ -162,7 +217,7 @@ input, textarea, select { font-family: inherit; }
 }
 .verdict.pass { background: var(--green-soft); color: var(--green); }
 .verdict.fail { background: var(--red-soft); color: var(--red); }
-.verdict.unknown { background: #f1f3f6; color: var(--muted); }
+.verdict.unknown { background: var(--hover); color: var(--muted); }
 
 .model-content { white-space: pre-wrap; word-break: break-word; }
 
@@ -174,7 +229,7 @@ input, textarea, select { font-family: inherit; }
 .fb-btn {
   display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 500;
   padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line-strong);
-  background: #fff; color: var(--muted); transition: all .12s;
+  background: var(--panel); color: var(--muted); transition: all .12s;
 }
 .fb-btn:hover { border-color: var(--muted); color: var(--text); }
 .fb-btn.correct:hover, .fb-btn.correct.active { border-color: var(--green); color: var(--green); background: var(--green-soft); }
@@ -198,7 +253,7 @@ input, textarea, select { font-family: inherit; }
 .composer-inner { max-width: 860px; margin: 0 auto; }
 .input-wrap {
   display: flex; align-items: flex-end; gap: 10px; border: 1px solid var(--line-strong);
-  border-radius: 14px; background: #fff; padding: 10px 12px; transition: border-color .15s, box-shadow .15s;
+  border-radius: 14px; background: var(--panel); padding: 10px 12px; transition: border-color .15s, box-shadow .15s;
 }
 .input-wrap:focus-within { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59,110,245,.12); }
 #input-text {
@@ -212,44 +267,115 @@ input, textarea, select { font-family: inherit; }
   display: flex; align-items: center; justify-content: center;
   transition: background .15s, transform .1s;
 }
-.send-btn:hover { background: #2f5ce0; }
+.send-btn:hover { background: var(--brand-strong); }
 .send-btn:active { transform: scale(.95); }
 .send-btn:disabled { opacity: .45; cursor: not-allowed; }
 .send-btn.stop { background: var(--red); box-shadow: 0 2px 8px rgba(217,83,79,.3); }
-.send-btn.stop:hover { background: #c43c38; }
-.composer-tip { font-size: 11px; color: #b6bcc6; text-align: center; margin-top: 8px; }
+.send-btn.stop:hover { background: var(--red); filter: brightness(.88); }
+.composer-tip { font-size: 11px; color: var(--faint); text-align: center; margin-top: 8px; }
 .composer-tip b { color: var(--muted); font-weight: 500; }
+/* 上下文栏里的“多轮对话”开关：轻量滑块，不用原生勾选框 */
+.ctx-toggle {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+  font-size: 12px; color: var(--muted); flex: none;
+  padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel);
+  transition: all .15s;
+}
+.ctx-toggle:hover { border-color: var(--brand); }
+.ctx-toggle input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ctx-toggle .ctx-sw {
+  position: relative; width: 30px; height: 18px; border-radius: 999px; flex: none;
+  background: var(--line-strong); transition: background .18s ease;
+}
+.ctx-toggle .ctx-sw i {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .18s ease;
+}
+.ctx-toggle input:checked + .ctx-sw { background: var(--brand); }
+.ctx-toggle input:checked + .ctx-sw i { transform: translateX(12px); }
+.ctx-toggle .ctx-txt { font-weight: 500; }
+.ctx-toggle input:focus-visible + .ctx-sw { box-shadow: 0 0 0 3px rgba(59,110,245,.25); }
+.ctx-note { font-size: 11px; color: var(--faint); flex: none; }
+
+/* 上下文生效分割线：从这一轮起，模型可看到此前的对话 */
+.ctx-divider {
+  max-width: 760px; margin: 26px auto 18px; display: flex; align-items: center; gap: 12px;
+  color: var(--muted); font-size: 11.5px;
+}
+.ctx-divider::before, .ctx-divider::after { content: ''; flex: 1; height: 1px; background: var(--line-strong); }
 
 /* ================= 设置页 ================= */
-#page-settings { display: none; flex: 1; overflow-y: auto; padding: 32px 0 60px; }
+#page-settings { display: none; flex: 1; overflow-y: auto; padding: 0 0 80px; }
 #page-settings.show { display: block; }
-.settings-top { max-width: 720px; margin: 0 auto; padding: 0 24px; }
-.settings-back {
-  display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px;
-  padding: 7px 14px; border: 1px solid var(--line-strong); border-radius: 9px;
-  background: #fff; color: var(--text); font-size: 13px; font-weight: 500; transition: all .15s;
+
+/* --- 粘性顶栏 --- */
+.settings-top {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--glass); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  padding: 14px 0 12px;
 }
-.settings-back:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
-.settings-inner { max-width: 720px; margin: 0 auto; padding: 0 24px; }
-.settings-title { font-size: 20px; font-weight: 650; margin: 0 0 20px; }
+.settings-top-inner { max-width: 760px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; gap: 14px; }
+.settings-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid var(--line-strong); border-radius: 9px;
+  background: var(--panel); color: var(--text); font-size: 13px; font-weight: 500; transition: all .15s; flex: none;
+}
+.settings-back:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); transform: translateX(-2px); }
+.settings-heading { min-width: 0; }
+.settings-title { font-size: 17px; font-weight: 650; margin: 0; line-height: 1.3; letter-spacing: .2px; }
+.settings-sub { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+/* --- 分区锚点导航 --- */
+.settings-nav { max-width: 760px; margin: 14px auto 0; padding: 0 24px; display: flex; gap: 8px; flex-wrap: wrap; }
+.nav-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--panel); color: var(--muted); font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all .15s; text-decoration: none;
+}
+.nav-chip:hover { border-color: var(--line-strong); color: var(--text); }
+.nav-chip.active { background: var(--brand-soft); border-color: var(--line-strong); color: var(--brand); }
+.nav-chip .nc-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .55; }
+
+.settings-inner { max-width: 760px; margin: 20px auto 0; padding: 0 24px; }
+
+/* --- 卡片：彩色图标 + 进场动效 --- */
 .card {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 22px 24px; margin-bottom: 18px; box-shadow: var(--shadow);
+  padding: 24px 26px; margin-bottom: 18px; box-shadow: var(--shadow);
+  scroll-margin-top: 110px;
+  opacity: 0; transform: translateY(14px);
+  transition: opacity .4s ease, transform .4s ease, border-color .2s;
 }
-.card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.card.reveal { opacity: 1; transform: none; }
+.card.reveal:hover { border-color: var(--line-strong); }
+.card-head { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
 .card-head .c-icon {
-  width: 30px; height: 30px; border-radius: 8px; background: var(--brand-soft); color: var(--brand);
-  font-size: 15px; display: flex; align-items: center; justify-content: center; flex: none;
+  width: 38px; height: 38px; border-radius: 10px; flex: none;
+  font-size: 17px; display: flex; align-items: center; justify-content: center;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.35);
 }
+.c-icon.tone-blue  { background: linear-gradient(135deg, #5b8bff, #3b6ef5); }
+.c-icon.tone-violet{ background: linear-gradient(135deg, #a78bfa, #7c5cf0); }
+.c-icon.tone-teal  { background: linear-gradient(135deg, #4fd1c5, #22b8a6); }
+.c-icon.tone-amber { background: linear-gradient(135deg, #f7b955, #ef9d26); }
+.c-icon.tone-green { background: linear-gradient(135deg, #58cf8f, #2fb56b); }
 .card-head h3 { font-size: 15px; margin: 0; font-weight: 650; }
-.card-head .c-desc { font-size: 12px; color: var(--muted); }
+.card-head .c-desc { font-size: 12px; color: var(--muted); margin-top: 1px; line-height: 1.55; }
+
+/* --- 卡内子面板：新增/编辑表单统一收进浅底容器 --- */
+.subpanel {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--soft);
+  padding: 15px 16px 13px; margin-bottom: 13px;
+}
 
 .field { margin-bottom: 13px; }
 .field label { display: block; font-size: 12.5px; font-weight: 500; color: var(--text); margin-bottom: 5px; }
 .field .hint { display: block; font-size: 11.5px; color: var(--muted); margin-top: 4px; }
 input[type=text], input[type=password], input[type=number], textarea, select {
   width: 100%; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 9px;
-  background: #fff; color: var(--text); font-size: 13px; outline: none; transition: border-color .15s, box-shadow .15s;
+  background: var(--panel); color: var(--text); font-size: 13px; outline: none; transition: border-color .15s, box-shadow .15s;
 }
 input:focus, textarea:focus, select:focus {
   border-color: var(--brand); box-shadow: 0 0 0 3px rgba(59,110,245,.12);
@@ -264,9 +390,9 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .btn:hover { background: #2f5ce0; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.ghost { background: #fff; border: 1px solid var(--line-strong); color: var(--text); }
+.btn.ghost { background: var(--panel); border: 1px solid var(--line-strong); color: var(--text); }
 .btn.ghost:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
-.btn.danger { background: #fff; border: 1px solid #f3cfcd; color: var(--red); }
+.btn.danger { background: var(--panel); border: 1px solid var(--red-soft); color: var(--red); }
 .btn.danger:hover { background: var(--red-soft); border-color: var(--red); }
 .btn.small { padding: 6px 12px; font-size: 12px; }
 
@@ -274,7 +400,7 @@ textarea { resize: vertical; min-height: 80px; }
 .cfg-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 12px; }
 .cfg-row { display: flex; align-items: center; gap: 10px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--line); }
 .cfg-row:last-child { border-bottom: none; }
-.cfg-row:hover { background: #fafbfc; }
+.cfg-row:hover { background: var(--soft); }
 .cfg-row .cr-radio { flex: none; cursor: pointer; }
 .cfg-row .cr-main { flex: 1; min-width: 0; }
 .cfg-row .cr-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -285,17 +411,22 @@ textarea { resize: vertical; min-height: 80px; }
   padding: 0 6px; margin-left: 6px; vertical-align: 1px;
 }
 .cfg-badge.custom { background: var(--brand-soft); color: var(--brand); border: 1px solid #dbe6ff; }
-.cfg-form { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: #fafbfc; }
+.cfg-form { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 12px; background: var(--soft); }
 .cfg-form .cfg-form-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text); }
 .default-badge {
   display: inline-block; font-size: 10.5px; font-weight: 600; border-radius: 5px;
   padding: 0 6px; margin-left: 6px; background: var(--amber-soft); color: var(--amber);
   border: 1px solid #ecd9a8; vertical-align: 1px;
 }
+.warn-badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600; border-radius: 5px;
+  padding: 0 6px; margin-left: 6px; background: var(--red-soft); color: var(--red);
+  border: 1px solid var(--red-soft); vertical-align: 1px;
+}
 .export-row { display: flex; align-items: center; gap: 14px; justify-content: space-between; flex-wrap: wrap; }
 .export-row .hint-text { flex: 1; min-width: 260px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
 
-.status { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; }
+.status { font-size: 12px; color: var(--muted); margin-top: 10px; min-height: 16px; transition: color .2s; }
 .status.ok { color: var(--green); }
 .status.err { color: var(--red); }
 .status.warn { color: var(--amber); }
@@ -307,7 +438,7 @@ textarea { resize: vertical; min-height: 80px; }
 /* 文件选择框 */
 .file-zone {
   display: flex; align-items: center; gap: 10px; border: 1.5px dashed var(--line-strong);
-  border-radius: 10px; padding: 14px; cursor: pointer; transition: all .15s; background: #fafbfc;
+  border-radius: 10px; padding: 14px; cursor: pointer; transition: all .15s; background: var(--soft);
 }
 .file-zone:hover { border-color: var(--brand); background: var(--brand-soft); }
 .file-zone .fz-icon { font-size: 20px; }
@@ -320,7 +451,7 @@ textarea { resize: vertical; min-height: 80px; }
   border-bottom: 1px solid var(--line);
 }
 .list-row:last-child { border-bottom: none; }
-.list-row:hover { background: #fafbfc; }
+.list-row:hover { background: var(--soft); }
 .list-row .lr-main { flex: 1; min-width: 0; }
 .list-row .lr-name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-row .lr-meta { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -334,7 +465,7 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .modal-mask.show { display: flex; }
 .modal {
-  background: #fff; border-radius: 14px; box-shadow: 0 10px 40px rgba(23,24,28,.2);
+  background: var(--panel); border-radius: 14px; box-shadow: 0 10px 40px rgba(23,24,28,.2);
   width: 100%; max-width: 560px; max-height: 84vh; display: flex; flex-direction: column;
 }
 .modal-head {
@@ -345,7 +476,7 @@ textarea { resize: vertical; min-height: 80px; }
   border: none; background: transparent; font-size: 18px; color: var(--muted);
   width: 30px; height: 30px; border-radius: 8px; line-height: 1;
 }
-.modal-close:hover { background: #f1f3f6; color: var(--text); }
+.modal-close:hover { background: var(--hover); color: var(--text); }
 .modal-body { padding: 18px 20px; overflow-y: auto; }
 .modal-foot { padding: 12px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
 .skill-preview {
@@ -359,7 +490,7 @@ textarea { resize: vertical; min-height: 80px; }
 ::-webkit-scrollbar-thumb:hover { background: #bcc3cd; }
 ::-webkit-scrollbar-track { background: transparent; }
 
-/* --- 终态卡：已停止 / 评估失败 --- */
+/* --- 终态卡：已停止 / 运行失败 --- */
 .status-card.stopped { border-color: var(--line-strong); }
 .status-card.stopped .ai-badge { background: #6b7280; }
 .status-card.failed { border-color: #f3cfcd; }
@@ -370,13 +501,8 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .status-card.failed .status-msg { color: #a33; }
 .retry-btn { margin-top: 2px; }
-.fb-btn.rc-retry { margin-left: auto; flex: none; }
-
-/* --- 结果格式警告条 --- */
-.rc-warn {
-  margin: 10px 20px 0; padding: 8px 12px; font-size: 12px; color: #8a5a13;
-  background: #fdf6e7; border: 1px solid #ecd9a8; border-radius: 8px; line-height: 1.6;
-}
+.fb-ops { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.fb-btn.rc-copy.copied { border-color: var(--green); color: var(--green); background: var(--green-soft); }
 
 /* --- 等待计时 / 慢提示 --- */
 .eval-pending .wait-time { margin-top: 6px; font-variant-numeric: tabular-nums; }
@@ -384,16 +510,6 @@ textarea { resize: vertical; min-height: 80px; }
 
 /* --- 反馈错误提示 --- */
 .fb-err { font-size: 12px; color: var(--red); flex: 1; min-width: 0; }
-
-/* --- 报告折叠 --- */
-.rc-toggle-row { padding: 0 20px 14px; }
-.rc-toggle {
-  width: 100%; padding: 8px 12px; font-size: 12.5px; color: var(--muted);
-  background: #f7f8fa; border: 1px dashed var(--line-strong); border-radius: 8px; cursor: pointer;
-}
-.rc-toggle:hover { color: var(--brand); border-color: var(--brand); }
-.rc-detail { display: none; }
-.rc-detail.open { display: block; }
 
 /* --- 会话操作（重命名 / 删除） --- */
 .session-item .s-ops { display: none; flex: none; gap: 2px; }
@@ -406,7 +522,7 @@ textarea { resize: vertical; min-height: 80px; }
 .s-op.danger:hover { background: var(--red-soft); color: var(--red); }
 .session-item .s-badge.pending { background: #eef3ff; color: #3b6ef5; }
 .session-item .s-badge.failed { background: var(--red-soft); color: var(--red); }
-.session-item .s-badge.aborted { background: #f1f3f6; color: var(--muted); }
+.session-item .s-badge.aborted { background: var(--hover); color: var(--muted); }
 
 /* --- 模型列表为空的设置入口 --- */
 .ctx-hint-link {
@@ -429,16 +545,17 @@ textarea { resize: vertical; min-height: 80px; }
   <!-- ========== 左侧栏 ========== -->
   <aside class="sidebar">
     <div class="brand">
-      <div class="logo">评</div>
+      <div class="logo">S</div>
       <div>
-        <h1>AI 评估助手</h1>
-        <div class="sub">基于 Skill 决策的自动评估</div>
+        <h1>SkillLab</h1>
+        <div class="sub">Skill 工作台</div>
       </div>
     </div>
     <button class="new-chat-btn" id="btn-new-chat">＋ 新会话</button>
     <div class="history-head">历史会话</div>
     <div class="session-list" id="session-list"><div class="empty-tip">暂无历史会话</div></div>
     <div class="sidebar-foot">
+      <button class="foot-btn" id="btn-theme">🌙 深色模式</button>
       <button class="foot-btn" id="btn-settings">⚙️ 设置</button>
     </div>
   </aside>
@@ -446,12 +563,18 @@ textarea { resize: vertical; min-height: 80px; }
   <!-- ========== 主区（对话） ========== -->
   <div class="main" id="page-chat">
     <div class="context-bar">
-      <span class="ctx-label">Skill 决策</span>
-      <select class="ctx-select" id="ctx-skill"><option value="">请选择</option></select>
-      <span class="ctx-label">人设</span>
-      <select class="ctx-select" id="ctx-persona"><option value="">请选择（可选）</option></select>
+      <span class="ctx-label">Skill</span>
+      <select class="ctx-select" id="ctx-skill"><option value="">💬 纯对话（不用 Skill）</option></select>
+      <span class="ctx-label">System Prompt</span>
+      <select class="ctx-select" id="ctx-persona"><option value="">（可选）</option></select>
       <span class="ctx-label">模型</span>
       <select class="ctx-select" id="ctx-model"><option value="">请选择</option></select>
+      <label class="ctx-toggle" id="use-context-row" title="开启后，本轮对话可参考本会话此前几轮的输入与结果（多轮对话）；关闭则每轮相互独立">
+        <input type="checkbox" id="use-context" checked>
+        <span class="ctx-sw"><i></i></span>
+        <span class="ctx-txt">🔄 多轮对话</span>
+      </label>
+      <span class="ctx-note" id="use-context-note">将参考此前运行（最多 5 轮）</span>
       <a class="gh-link" href="https://github.com/buburvhv/ai-eval" target="_blank" rel="noopener" title="项目 GitHub 主页，欢迎提 issue 联系我">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
         GitHub
@@ -461,11 +584,11 @@ textarea { resize: vertical; min-height: 80px; }
     <div class="msgs" id="msgs">
       <div class="msgs-inner" id="msgs-inner">
         <div class="empty-state" id="empty-state">
-          <div class="big">👋 开始一次评估</div>
+          <div class="big">👋 开始运行</div>
           <div class="steps">
-            在上方选择 <b>Skill 决策</b>、<b>人设</b> 和 <b>模型</b>，然后在下方输入待评估的内容。<br>
-            每次评估相互独立，不影响之前的判断；历史会话在左侧查看。<br>
-            情绪价值/人设匹配/自然延展请根据任务合理查看，模型只是根据规则评判，借鉴可以请不要依赖。
+            在上方选择 <b>Skill</b>（可不选，即纯 AI 对话）、<b>System Prompt</b>（可选）和 <b>模型</b>，然后在下方输入内容。<br>
+            运行默认相互独立；开启「🔄 多轮对话」后，模型可参考本会话此前几轮的输入与结果。历史会话在左侧查看。<br>
+            结果格式由所选 Skill 的输出要求决定，页面会按表格 / JSON / 文本自动展示，仅供参考。
           </div>
           <button class="btn" id="btn-go-config-static">⚙️ 立即去配置</button>
         </div>
@@ -474,10 +597,10 @@ textarea { resize: vertical; min-height: 80px; }
     <div class="composer">
       <div class="composer-inner">
         <div class="input-wrap">
-          <textarea id="input-text" rows="1" placeholder="输入待评估的内容，Ctrl + Enter 发送"></textarea>
+          <textarea id="input-text" rows="1" placeholder="输入内容，Ctrl + Enter 发送（不选 Skill 即纯 AI 对话）"></textarea>
           <button class="send-btn" id="btn-send" title="发送（Ctrl+Enter）">➤</button>
         </div>
-        <div class="composer-tip">评估记录将自动保存，可在每条结论下方标注 <b>正确 / 不正确</b></div>
+        <div class="composer-tip">运行记录将自动保存，可在每条结果下方标注 <b>正确 / 不正确</b></div>
       </div>
     </div>
   </div>
@@ -485,15 +608,27 @@ textarea { resize: vertical; min-height: 80px; }
   <!-- ========== 设置页 ========== -->
   <div id="page-settings">
     <div class="settings-top">
-      <button class="settings-back" id="btn-back-chat">← 返回对话</button>
+      <div class="settings-top-inner">
+        <button class="settings-back" id="btn-back-chat">← 返回对话</button>
+        <div class="settings-heading">
+          <h2 class="settings-title">设置</h2>
+          <div class="settings-sub">配置只影响本浏览器 / 本机，详见各分区说明</div>
+        </div>
+      </div>
+      <nav class="settings-nav" id="settings-nav">
+        <a class="nav-chip" href="#sec-model"><span class="nc-dot"></span>模型</a>
+        <a class="nav-chip" href="#sec-persona"><span class="nc-dot"></span>System Prompt</a>
+        <a class="nav-chip" href="#sec-skill"><span class="nc-dot"></span>Skill</a>
+        <a class="nav-chip" href="#sec-pkg"><span class="nc-dot"></span>Skill 包</a>
+        <a class="nav-chip" href="#sec-data"><span class="nc-dot"></span>数据</a>
+      </nav>
     </div>
     <div class="settings-inner">
-      <h2 class="settings-title">设置</h2>
 
       <!-- 模型 -->
-      <div class="card">
+      <div class="card" id="sec-model">
         <div class="card-head">
-          <div class="c-icon">🧠</div>
+          <div class="c-icon tone-blue">🧠</div>
           <div>
             <h3>模型配置</h3>
             <div class="c-desc">默认配置可直接修改 URL/Key，也可新增自己的配置；改动仅保存在本浏览器，互不影响</div>
@@ -543,66 +678,100 @@ textarea { resize: vertical; min-height: 80px; }
         </div>
       </div>
 
-      <!-- 人设 -->
-      <div class="card">
+      <!-- System Prompt -->
+      <div class="card" id="sec-persona">
         <div class="card-head">
-          <div class="c-icon">👤</div>
+          <div class="c-icon tone-violet">👤</div>
           <div>
-            <h3>用户人设</h3>
-            <div class="c-desc">保存后可在主页面下拉复用</div>
+            <h3>System Prompt</h3>
+            <div class="c-desc">保存后可在主页面下拉复用；选了 Skill 时作为被评估对象的画像，纯对话时直接作为 system 指令</div>
           </div>
         </div>
-        <div class="list-block" id="persona-list"><div class="empty-tip">暂无已保存的人设</div></div>
-        <div class="field" style="margin-top:14px">
-          <label>人设名称</label>
-          <input type="text" id="persona-name" placeholder="如：客服助手小美">
-        </div>
-        <div class="field">
-          <label>人设内容</label>
-          <textarea id="persona-text" placeholder="粘贴人设信息文本..."></textarea>
-        </div>
-        <div class="row">
-          <button class="btn" id="btn-save-persona">保存人设</button>
-          <button class="btn ghost" id="btn-clear-persona-form">清空</button>
+        <div class="list-block" id="persona-list"><div class="empty-tip">暂无已保存的 System Prompt</div></div>
+        <div class="subpanel" style="margin-top:14px">
+          <div class="field" style="margin-bottom:11px">
+            <label>System Prompt 名称</label>
+            <input type="text" id="persona-name" placeholder="如：客服助手小美">
+          </div>
+          <div class="field" style="margin-bottom:11px">
+            <label>System Prompt 内容</label>
+            <textarea id="persona-text" placeholder="粘贴 System Prompt 文本..."></textarea>
+          </div>
+          <div class="row">
+            <button class="btn" id="btn-save-persona">保存 System Prompt</button>
+            <button class="btn ghost" id="btn-clear-persona-form">清空</button>
+          </div>
         </div>
         <div class="status" id="persona-status"></div>
       </div>
 
       <!-- Skill -->
-      <div class="card">
+      <div class="card" id="sec-skill">
         <div class="card-head">
-          <div class="c-icon">📐</div>
+          <div class="c-icon tone-teal">📐</div>
           <div>
-            <h3>Skill 决策标准</h3>
-            <div class="c-desc">上传评估标准文件并命名，主页面下拉选择</div>
+            <h3>Skill 标准</h3>
+            <div class="c-desc">上传 Skill 文件并命名，主页面下拉选择</div>
           </div>
         </div>
         <div class="list-block" id="skill-list"><div class="empty-tip">暂无已上传的 Skill</div></div>
-        <div class="field" style="margin-top:14px">
-          <label>Skill 名称（自定义）</label>
-          <input type="text" id="skill-name" placeholder="如：客服回复质量评估标准 v1">
-        </div>
-        <div class="field">
-          <label>上传文件</label>
-          <div class="file-zone" id="file-zone">
-            <span class="fz-icon">📄</span>
-            <span class="fz-text" id="file-zone-text">点击选择或拖入文件（.md / .txt）</span>
+        <div class="subpanel" style="margin-top:14px">
+          <div class="field" style="margin-bottom:11px">
+            <label>Skill 名称（自定义）</label>
+            <input type="text" id="skill-name" placeholder="如：客服回复质量评估标准 v1">
           </div>
-          <input type="file" id="skill-file" accept=".md,.txt,.markdown,text/plain" style="display:none">
-        </div>
-        <div class="row">
-          <button class="btn" id="btn-save-skill">上传并保存</button>
+          <div class="field" style="margin-bottom:11px">
+            <label>上传文件</label>
+            <div class="file-zone" id="file-zone">
+              <span class="fz-icon">📄</span>
+              <span class="fz-text" id="file-zone-text">点击选择或拖入文件（.md / .txt）</span>
+            </div>
+            <input type="file" id="skill-file" accept=".md,.txt,.markdown,text/plain" style="display:none">
+          </div>
+          <div class="row">
+            <button class="btn" id="btn-save-skill">上传并保存</button>
+          </div>
         </div>
         <div class="status" id="skill-status"></div>
       </div>
 
-      <!-- 数据与标注 -->
-      <div class="card">
+      <!-- 复杂 Skill 包 -->
+      <div class="card" id="sec-pkg">
         <div class="card-head">
-          <div class="c-icon">📊</div>
+          <div class="c-icon tone-amber">📦</div>
           <div>
-            <h3>评估数据与人工标注</h3>
-            <div class="c-desc">「正确 / 不正确」标注保存在服务器数据库（data.db 的 evals 表），所有评估记录实时落库</div>
+            <h3>复杂 Skill 包</h3>
+            <div class="c-desc">上传带脚本的 Skill 包（zip：SKILL.md + scripts/），运行时模型可调用包内脚本</div>
+          </div>
+        </div>
+        <div class="list-block" id="pkg-list"><div class="empty-tip">暂无已上传的 Skill 包</div></div>
+        <div class="subpanel" style="margin-top:14px">
+          <div class="field" style="margin-bottom:11px">
+            <label>包名称（自定义）</label>
+            <input type="text" id="pkg-name" placeholder="如：数据统计评估包 v1">
+          </div>
+          <div class="field" style="margin-bottom:11px">
+            <label>上传 Skill 包（.zip，内含 SKILL.md）</label>
+            <div class="file-zone" id="pkg-zone">
+              <span class="fz-icon">📦</span>
+              <span class="fz-text" id="pkg-zone-text">点击选择或拖入 zip 包</span>
+            </div>
+            <input type="file" id="pkg-file" accept=".zip,application/zip" style="display:none">
+          </div>
+          <div class="row">
+            <button class="btn" id="btn-save-pkg">上传并保存</button>
+          </div>
+        </div>
+        <div class="status" id="pkg-status"></div>
+      </div>
+
+      <!-- 数据与标注 -->
+      <div class="card" id="sec-data">
+        <div class="card-head">
+          <div class="c-icon tone-green">📊</div>
+          <div>
+            <h3>运行数据与人工标注</h3>
+            <div class="c-desc">「正确 / 不正确」标注保存在服务器数据库（data.db 的 evals 表），所有运行记录实时落库</div>
           </div>
         </div>
         <div class="export-row">
@@ -683,7 +852,69 @@ function showPage(page) {
   $('page-chat').style.display = page === 'chat' ? 'flex' : 'none';
   $('page-settings').classList.toggle('show', page === 'settings');
   $('btn-settings').classList.toggle('active', page === 'settings');
+  if (page === 'settings') initSettingsFx();
 }
+
+/* ================= 设置页：卡片进场 + 分区导航联动 ================= */
+let settingsFxReady = false;
+function initSettingsFx() {
+  if (settingsFxReady) return;
+  settingsFxReady = true;
+  const root = $('page-settings');
+  const cards = Array.from(root.querySelectorAll('.card[id]'));
+  const chips = Array.from(root.querySelectorAll('.nav-chip'));
+  // 锚点点击 → 平滑滚动（不用默认 hash 跳转，避免瞬移）
+  chips.forEach(ch => ch.addEventListener('click', e => {
+    e.preventDefault();
+    const t = document.getElementById(ch.getAttribute('href').slice(1));
+    if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  // 导航高亮：滚到顶栏下方的第一张卡
+  const syncActive = () => {
+    let first = null;
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (r.bottom > 150 && r.top < window.innerHeight) { first = first || c; }
+    }
+    chips.forEach(c => c.classList.toggle('active', !!first && c.getAttribute('href') === '#' + first.id));
+  };
+  // 卡片进场：进入视口淡入上滑（一次性），同时同步导航
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      en.target.classList.add('reveal');
+      io.unobserve(en.target);
+    });
+    syncActive();
+  }, { root, threshold: 0.08 });
+  cards.forEach(c => io.observe(c));
+  // 滚动时导航跟随（rAF 节流）
+  let raf = 0;
+  root.addEventListener('scroll', () => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => { raf = 0; syncActive(); });
+  }, { passive: true });
+}
+
+/* ================= 主题切换 ================= */
+/* 持久化在 localStorage('ai_eval_theme')；未手动选过则跟随系统偏好（系统切换时实时跟随） */
+let themeFollowSystem = !['light', 'dark'].includes(lsGet('ai_eval_theme', ''));
+const mqDark = window.matchMedia && matchMedia('(prefers-color-scheme: dark)');
+function applyTheme(t, persist) {
+  document.documentElement.dataset.theme = t;
+  if (persist) { lsSet('ai_eval_theme', t); themeFollowSystem = false; }
+  $('btn-theme').textContent = t === 'dark' ? '☀️ 浅色模式' : '🌙 深色模式';
+  $('btn-theme').title = t === 'dark' ? '切换到浅色主题' : '切换到深色主题';
+}
+$('btn-theme').onclick = () => {
+  applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark', true);
+};
+if (mqDark && mqDark.addEventListener) {
+  mqDark.addEventListener('change', (e) => {
+    if (themeFollowSystem) applyTheme(e.matches ? 'dark' : 'light', false);
+  });
+}
+applyTheme(document.documentElement.dataset.theme || 'light', false);
 
 $('btn-settings').onclick = () => showPage('settings');
 $('btn-back-chat').onclick = () => showPage('chat');
@@ -713,7 +944,7 @@ function newSession() {
 }
 
 /* ================= 消息渲染 ================= */
-/** 把原待评估文本带回输入框（不自动发送，用户可先换 Skill/人设/模型） */
+/** 把原待评估文本带回输入框（不自动发送，用户可先换 Skill/System Prompt/模型） */
 function fillInput(text) {
   showPage('chat');
   $('input-text').value = text || '';
@@ -721,7 +952,7 @@ function fillInput(text) {
   focusInput();
 }
 
-/** 终态卡：已停止 / 评估失败，带「带入输入框重评」入口 */
+/** 终态卡：已停止 / 运行失败，带「带入输入框重评」入口 */
 function statusCard(ev, title, msg, cls) {
   const div = document.createElement('div');
   div.className = 'report-wrap';
@@ -733,7 +964,7 @@ function statusCard(ev, title, msg, cls) {
       </div>
       <div class="rc-section">
         <div class="status-msg">${esc(msg)}</div>
-        <button class="fb-btn retry-btn" data-act="retry">↩ 带入输入框重评</button>
+        <button class="fb-btn retry-btn" data-act="retry">↩ 带入输入框重发</button>
       </div>
     </div>`;
   div.querySelector('[data-act=retry]').onclick = () => fillInput(ev.input_text);
@@ -741,30 +972,33 @@ function statusCard(ev, title, msg, cls) {
 }
 
 /**
- * 一条评估记录 = 请求行（浅蓝条）+ 单列评估报告卡。
- * 优先用 parseEvalReport 渲染结构化报告；解析失败显示「评估结果解析异常」并保留原始输出。
+ * 一条评估记录 = 请求行（浅蓝条）+ 通用输出报告卡。
+ * 模型输出原样展示：JSON 格式化 / Markdown 表格渲染成表格 / 其余普通文本。
  */
 function msgNode(ev, opts = {}) {
   const wrap = document.createElement('div');
   wrap.className = 'msg';
+  wrap.dataset.uc = ev.use_context ? '1' : '0';   // 上下文生效分割线渲染依据
+  if (opts.enter) wrap.classList.add('msg-enter');
 
   // 请求行
   const req = document.createElement('div');
   req.className = 'eval-request';
-  req.innerHTML = `<div class="er-label"><span>📝 评估请求 · ${esc(fmtTime(ev.eval_at))}</span></div>${esc(ev.input_text)}`;
+  const roundTag = ev.round_no ? ` · 第${ev.round_no}轮` : '';
+  req.innerHTML = `<div class="er-label"><span>📝 输入${roundTag} · ${esc(fmtTime(ev.eval_at))}</span></div>${esc(ev.input_text)}`;
   wrap.appendChild(req);
 
   if (opts.pending) return wrap;
 
-  // 没有结果：按服务端状态区分「评估中 / 已停止 / 评估失败」，不再永远转圈
+  // 没有结果：按服务端状态区分「评估中 / 已停止 / 运行失败」，不再永远转圈
   if (!ev.output_text) {
     const st = ev.status || 'pending';
     if (st === 'aborted') {
-      wrap.appendChild(statusCard(ev, '已停止', ev.error_message || '本次评估已停止。', 'stopped'));
+      wrap.appendChild(statusCard(ev, '已停止', ev.error_message || '本次运行已停止。', 'stopped'));
       return wrap;
     }
     if (st === 'failed') {
-      wrap.appendChild(statusCard(ev, '评估失败', ev.error_message || '模型调用失败，请检查网关配置后重试。', 'failed'));
+      wrap.appendChild(statusCard(ev, '运行失败', ev.error_message || '模型调用失败，请检查网关配置后重试。', 'failed'));
       return wrap;
     }
     // pending：仍在评估中（刷新页面后继续显示进行中）
@@ -773,12 +1007,12 @@ function msgNode(ev, opts = {}) {
     pend.innerHTML = `
       <div class="report-card">
         <div class="rc-header">
-          <div class="rc-title"><span class="ai-badge">AI</span>评估中</div>
+          <div class="rc-title"><span class="ai-badge">AI</span>运行中</div>
           <span class="rc-time">${esc(ev.model || '')}</span>
         </div>
         <div class="rc-section" style="padding:26px 20px">
           <div class="typing"><i></i><i></i><i></i></div>
-          <span class="hint">　模型正在按 Skill 标准逐轮评估，请稍候…</span>
+          <span class="hint">　模型正在按 Skill 标准运行，请稍候…</span>
         </div>
       </div>`;
     wrap.appendChild(pend);
@@ -787,22 +1021,8 @@ function msgNode(ev, opts = {}) {
 
   const reportWrap = document.createElement('div');
   reportWrap.className = 'report-wrap';
-  const report = parseEvalReport(ev.output_text);
-
-  if (report.ok) {
-    reportWrap.appendChild(reportCard(ev, report));
-  } else {
-    // 模型未按约定 JSON 返回：右上角「未按正常格式返回」标注，正文直接展示原始输出
-    reportWrap.innerHTML = `
-      <div class="report-card raw-card">
-        <div class="rc-header">
-          <div class="rc-title"><span class="ai-badge">AI</span>评估结果</div>
-          <span class="rc-chip raw-flag" title="模型输出不符合 Skill 约定的 JSON 格式">⚠ 未按正常格式返回</span>
-          <span class="rc-time">${esc(ev.eval_at || '')}</span>
-        </div>
-        <div class="rc-section raw-output">${esc(ev.output_text || '')}</div>
-      </div>`;
-  }
+  // 通用输出卡：模型输出什么就正常展示什么（JSON 格式化 / Markdown 表格 / 普通文本）
+  reportWrap.appendChild(reportCard(ev, ev.output_text || ''));
 
   // 反馈行
   const fb = document.createElement('div');
@@ -813,11 +1033,15 @@ function msgNode(ev, opts = {}) {
   fb.style.borderRadius = '10px';
   const fbVal = ev.feedback;
   fb.innerHTML = `
-    <span class="fb-ask">${fbVal ? '已标注：' : '评估是否正确？'}</span>
+    <span class="fb-ask">${fbVal ? '已标注：' : '结果是否正确？'}</span>
     <button class="fb-btn correct${fbVal === 'correct' ? ' active' : ''}">✓ 正确</button>
     <button class="fb-btn incorrect${fbVal === 'incorrect' ? ' active' : ''}">✗ 不正确</button>
-    <span class="fb-err" style="display:none"></span>`;
-  fb.querySelectorAll('.fb-btn').forEach(btn => {
+    <span class="fb-err" style="display:none"></span>
+    <span class="fb-ops">
+      <button class="fb-btn rc-copy" data-act="copy" type="button" title="复制模型输出原文">⧉ 复制</button>
+      <button class="fb-btn rc-retry" data-act="retry" type="button">↩ 重发</button>
+    </span>`;
+  fb.querySelectorAll('.fb-btn.correct, .fb-btn.incorrect').forEach(btn => {
     btn.onclick = async () => {
       if (!ev.id) return;
       const target = btn.classList.contains('correct') ? 'correct' : 'incorrect';
@@ -826,10 +1050,10 @@ function msgNode(ev, opts = {}) {
       try {
         const d = await api.post(`/api/eval/${ev.id}/feedback`, { feedback: payload });
         ev.feedback = d.feedback || null;
-        fb.querySelectorAll('.fb-btn').forEach(b => {
+        fb.querySelectorAll('.fb-btn.correct, .fb-btn.incorrect').forEach(b => {
           b.classList.toggle('active', b.classList.contains(String(ev.feedback)));
         });
-        fb.querySelector('.fb-ask').textContent = ev.feedback ? '已标注：' : '评估是否正确？';
+        fb.querySelector('.fb-ask').textContent = ev.feedback ? '已标注：' : '结果是否正确？';
         fb.querySelector('.fb-err').style.display = 'none';
         await loadSessions(viewingSessionId || currentSessionId);
       } catch (e) {
@@ -839,6 +1063,15 @@ function msgNode(ev, opts = {}) {
       }
     };
   });
+  // 复制 / 重发：放到结果卡底部（反馈行右侧）
+  fb.querySelector('[data-act=copy]').onclick = async () => {
+    const btn = fb.querySelector('[data-act=copy]');
+    const ok = await copyText(outputText || '');
+    btn.textContent = ok ? '✓ 已复制' : '✕ 复制失败';
+    btn.classList.toggle('copied', ok);
+    setTimeout(() => { btn.textContent = '⧉ 复制'; btn.classList.remove('copied'); }, 1600);
+  };
+  fb.querySelector('[data-act=retry]').onclick = () => fillInput(ev.input_text);
   reportWrap.appendChild(fb);
   wrap.appendChild(reportWrap);
   return wrap;
@@ -848,141 +1081,92 @@ function msgNode(ev, opts = {}) {
  * 构建单列评估报告卡（DOM 版本，事件绑定安全）。
  * 层级：Header → 总体问题 → 总分 → 六维表 → 主要问题 → 改进建议
  */
-function reportCard(ev, report) {
+/** 取执行轨迹：新响应是数组，历史记录（SELECT *）是 JSON 字符串，统一转数组 */
+function traceOf(ev) {
+  const raw = ev && ev.exec_trace;
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : null;
+  } catch (e) { return null; }
+}
+
+/**
+ * 通用输出报告卡：Header + 模型输出（正常展示）+ 脚本执行轨迹（仅复杂 Skill 包有）。
+ * 不再绑定任何 Skill 的输出结构。
+ */
+/** 复制文本到剪贴板：优先 Clipboard API（127.0.0.1 是安全上下文），失败降级 execCommand */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (e) { /* 降级到 execCommand */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok;
+  } catch (e) { return false; }
+}
+
+function reportCard(ev, outputText) {
   const card = document.createElement('div');
   card.className = 'report-card';
 
   // --- Header ---
-  const grade = scoreGrade(report.total_score, report.max_total);
+  const isChat = !ev.skill_name || ev.skill_name === '（纯对话）';
   const head = document.createElement('div');
   head.className = 'rc-header';
   head.innerHTML = `
-    <div class="rc-title"><span class="ai-badge">AI</span>评估结果</div>
-    <span class="rc-chip" title="Skill：${esc(ev.skill_name)}">📐 ${esc(ev.skill_name || '—')}</span>
+    <div class="rc-title"><span class="ai-badge">AI</span>${isChat ? '回复' : '运行结果'}</div>
+    ${isChat ? '' : `<span class="rc-chip" title="Skill：${esc(ev.skill_name)}">📐 ${esc(ev.skill_name || '—')}</span>`}
     <span class="rc-chip" title="模型：${esc(ev.model)}">🧠 ${esc(ev.model)}</span>
-    <span class="rc-chip" title="人设：${esc(ev.persona_name)}">👤 ${esc(ev.persona_name || '未提供')}</span>
-    <span class="rc-time">评估时间：${esc(ev.eval_at || '')}</span>
-    <button class="fb-btn rc-retry" data-act="retry" type="button">↩ 重评</button>`;
-  head.querySelector('[data-act=retry]').onclick = () => fillInput(ev.input_text);
+    ${(ev.persona_name && !/^（未提供/.test(ev.persona_name)) ? `<span class="rc-chip" title="System Prompt：${esc(ev.persona_name)}">👤 ${esc(ev.persona_name)}</span>` : ''}
+    <span class="rc-time">运行时间：${esc(ev.eval_at || '')}</span>`;
   card.appendChild(head);
 
-  // 结构异常提示：模型返回的 JSON 有缺失/非法字段被修正，提醒用户结果格式不完全可信
-  if (report.warnings && report.warnings.length) {
-    const warnBox = document.createElement('div');
-    warnBox.className = 'rc-warn';
-    warnBox.innerHTML = `<b>⚠ 结果格式不完全符合标准：</b>${report.warnings.map(w => esc(w)).join('；')}。原始输出仍可复核。`;
-    card.appendChild(warnBox);
-  }
+  // --- 模型输出：正常展示（JSON 格式化 / Markdown 表格 / 普通文本） ---
+  // 防御：report-parser.js 未加载（如被缓存拦截）时降级为纯文本输出，页面不崩
+  const gen = (typeof formatGenericOutput === 'function')
+    ? formatGenericOutput(outputText)
+    : { kind: 'text', html: '<pre class="gen-text">' + esc(outputText || '') + '</pre>' };
+  const body = document.createElement('div');
+  body.className = 'rc-section gen-output';
+  body.innerHTML = gen.html || '<div class="hint">（模型未返回内容）</div>';
+  card.appendChild(body);
 
-  // --- 2. 总体问题 ---
-  const secIssue = document.createElement('div');
-  secIssue.className = 'rc-section';
-  const isOk = /未发现明显问题/.test(report.overall_issue);
-  secIssue.innerHTML = `
-    <div class="rc-sec-title t-issue"><span class="dot"></span>总体问题</div>
-    <div class="rc-overall ${isOk ? 'ok-plain' : ''}">${esc(report.overall_issue || '未发现明显问题')}</div>`;
-  card.appendChild(secIssue);
-
-  // --- 3. 总分 ---
-  const pct = report.max_total ? Math.round(report.total_score / report.max_total * 100) : 0;
-  const secTotal = document.createElement('div');
-  secTotal.className = 'rc-section';
-  secTotal.innerHTML = `
-    <div class="rc-sec-title t-score"><span class="dot"></span>综合总分</div>
-    <div class="rc-total-row">
-      <div class="rc-total-num"><span class="num">${report.total_score}</span><span class="den">/ ${report.max_total}</span></div>
-      <span class="rc-grade ${grade.cls}">${grade.label}</span>
-      <div class="rc-bar">
-        <div class="rc-bar-track"><div class="rc-bar-fill ${grade.cls}" style="width:${pct}%"></div></div>
-        <div class="rc-grade-note">得分率 ${pct}%</div>
-      </div>
-    </div>`;
-  card.appendChild(secTotal);
-
-  // --- 4. 六维评分表 ---
-  const secDims = document.createElement('div');
-  secDims.className = 'rc-section';
-  const dimRows = report.dimensions.map(d => {
-    const bad = d.score < d.max_score;
-    const full = d.score === d.max_score;
-    const flag = d.score === 0
-      ? '<span class="dim-flag critical">严重问题</span>'
-      : bad ? '<span class="dim-flag warn">有问题</span>' : '';
-    const issueHtml = full
-      ? '<span class="ok">无明显问题</span>'
-      : `<span class="round">${d.issue ? (d.issue.match(/第\s*[\d一二三四五六七八九十]+\s*轮/) ? '' : '') : ''}</span>${esc(d.issue || '存在问题')}`;
-    return `
-      <tr class="${bad ? 'dim-bad' : ''}">
-        <td class="dim-name">${esc(d.name)}</td>
-        <td class="dim-score"><span class="${full ? 'full' : bad ? 'bad' : ''}">${d.score}</span> / ${d.max_score}</td>
-        <td>${flag}</td>
-        <td class="dim-issue">${issueHtml}</td>
-      </tr>`;
-  }).join('');
-  secDims.innerHTML = `
-    <div class="rc-sec-title t-dims"><span class="dot"></span>六维评分</div>
-    <table class="dims-table">
-      <thead><tr><th style="width:110px">维度</th><th style="width:100px">得分 (分)</th><th style="width:90px">状态</th><th>问题说明</th></tr></thead>
-      <tbody>${dimRows}</tbody>
-    </table>`;
-  card.appendChild(secDims);
-
-  // --- 5. 主要问题 ---
-  const secProblems = document.createElement('div');
-  secProblems.className = 'rc-section';
-  const issues = report.main_issues;
-  if (issues.length) {
-    secProblems.innerHTML = `
-      <div class="rc-sec-title t-problems"><span class="dot"></span>主要问题</div>
-      <div class="main-issues">
-        ${issues.map(i => `
-          <div class="mi-item ${i.score === 2 ? 'sev-2' : 'sev-1'}">
-            <span class="mi-dim">${esc(i.dimension || '—')}</span>
-            <span class="mi-tag">${esc(i.problem_type || (i.score === 2 ? '严重' : '轻微'))}</span>
-            <span class="mi-round">${i.round ? `第 ${i.round} 轮` : ''}</span>
-            <span class="mi-desc">${esc(i.description || i.evidence || '')}</span>
-          </div>`).join('')}
+  // --- 脚本执行轨迹（仅复杂 Skill 包评估有，直接展示不折叠） ---
+  const trace = traceOf(ev);
+  if (trace && trace.length) {
+    const secTrace = document.createElement('div');
+    secTrace.className = 'rc-section';
+    const traceRows = trace.map(t => {
+      const ok = t.exit_code === 0;
+      return `
+      <div class="tr-item ${ok ? '' : 'tr-err'}">
+        <div class="tr-head">
+          <span class="tr-name">⚡ ${esc(t.script || '—')}</span>
+          ${t.argv && t.argv.length > 1 ? `<code class="tr-argv">${esc(t.argv.slice(1).join(' '))}</code>` : ''}
+          <span class="tr-exit ${ok ? 'ok' : 'bad'}">exit ${t.exit_code}</span>
+          <span class="tr-dur">${t.duration != null ? t.duration.toFixed(1) + 's' : ''}</span>
+        </div>
+        ${t.stdout_tail ? `<pre class="tr-out">${esc(t.stdout_tail)}</pre>` : ''}
+        ${t.stderr_tail ? `<pre class="tr-err-out">${esc(t.stderr_tail)}</pre>` : ''}
       </div>`;
-  } else {
-    secProblems.innerHTML = `
-      <div class="rc-sec-title t-problems"><span class="dot"></span>主要问题</div>
-      <div class="hint">无主要问题记录</div>`;
-  }
-  card.appendChild(secProblems);
-
-  // --- 6. 改进建议 ---
-  const secSug = document.createElement('div');
-  secSug.className = 'rc-section';
-  if (report.suggestions.length) {
-    secSug.innerHTML = `
-      <div class="rc-sec-title t-suggest"><span class="dot"></span>改进建议</div>
-      <div class="suggest-box"><ul>${report.suggestions.map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>`;
-  } else {
-    secSug.innerHTML = `
-      <div class="rc-sec-title t-suggest"><span class="dot"></span>改进建议</div>
-      <div class="hint">暂无改进建议</div>`;
+    }).join('');
+    secTrace.innerHTML = `
+      <div class="rc-sec-title t-trace"><span class="dot"></span>脚本执行轨迹（${trace.length} 次）</div>
+      <div class="trace-box">${traceRows}</div>`;
+    card.appendChild(secTrace);
   }
 
-  // --- 折叠区：六维评分 + 主要问题 + 改进建议 ---
-  // 默认只展示总体问题与总分，长会话下更易扫读；详细评分可一键展开
-  const detail = document.createElement('div');
-  detail.className = 'rc-detail';
-  detail.appendChild(secDims);
-  detail.appendChild(secProblems);
-  detail.appendChild(secSug);
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'rc-toggle';
-  toggle.textContent = '展开详细评分';
-  toggle.onclick = () => {
-    const open = detail.classList.toggle('open');
-    toggle.textContent = open ? '收起详细评分' : '展开详细评分';
-  };
-  const toggleRow = document.createElement('div');
-  toggleRow.className = 'rc-toggle-row';
-  toggleRow.appendChild(toggle);
-  card.appendChild(toggleRow);
-  card.appendChild(detail);
   return card;
 }
 
@@ -992,24 +1176,45 @@ function renderMessages(evals) {
   if (!evals.length) {
     inner.innerHTML = `
       <div class="empty-state">
-        <div class="big">👋 开始一次评估</div>
+        <div class="big">👋 开始运行</div>
         <div class="steps">
-          在上方选择 <b>Skill 决策</b>、<b>人设</b> 和 <b>模型</b>，然后在下方输入待评估的内容。<br>
-          每次评估相互独立，不影响之前的判断；历史会话在左侧查看。<br>
-          情绪价值/人设匹配/自然延展请根据任务合理查看，模型只是根据规则评判，借鉴可以请不要依赖。
+          在上方选择 <b>Skill</b>（可不选，即纯 AI 对话）、<b>System Prompt</b>（可选）和 <b>模型</b>，然后在下方输入内容。<br>
+          运行默认相互独立；开启「🔗 带上下文」后，模型可参考本会话此前几轮的输入与结果。历史会话在左侧查看。<br>
+          结果格式由所选 Skill 的输出要求决定，页面会按表格 / JSON / 文本自动展示，仅供参考。
         </div>
         <button class="btn" id="btn-go-config">⚙️ 立即去配置</button>
       </div>`;
     $('btn-go-config').onclick = () => showPage('settings');
+    updateContextNote(0);
     syncModelTip();
     return;
   }
-  evals.forEach(ev => inner.appendChild(msgNode(ev)));
+  let prevUc = null;
+  evals.forEach(ev => {
+    // 上下文生效分割线：从“未带上下文”到“带上下文”的转变处（回看历史会话时同样可见）
+    if (ev.use_context && prevUc === false) {
+      const divider = document.createElement('div');
+      divider.className = 'ctx-divider';
+      divider.textContent = '⬆ 以上对话已纳入本轮上下文';
+      inner.appendChild(divider);
+    }
+    if (ev.status !== 'pending') prevUc = !!ev.use_context;
+    inner.appendChild(msgNode(ev));
+  });
+  updateContextNote(evals.filter(e => e.status === 'completed').length);
   $('msgs').scrollTop = $('msgs').scrollHeight;
   syncModelTip();
 }
 
 /** 黄条提示：仅在新对话（还没有任何评估记录）时显示，聊过一轮后隐藏 */
+/** 上下文栏「多轮对话」动态提示：本轮实际能带上的轮数（与后端 MAX_CONTEXT_ROUNDS=5 一致） */
+function updateContextNote(doneRounds) {
+  const note = $('use-context-note');
+  if (!note) return;
+  const n = Math.min(Number(doneRounds) || 0, 5);
+  note.textContent = n > 0 ? `将参考此前 ${n} 轮` : '本会话首轮，暂无历史可参考';
+}
+
 function syncModelTip() {
   const hasMsg = document.querySelector('#msgs-inner .msg') != null;
   $('model-tip-bar').style.display = hasMsg ? 'none' : '';
@@ -1036,7 +1241,7 @@ function setSendState(state) {
   const btn = $('btn-send');
   if (state === 'pending') {
     btn.innerHTML = '■';
-    btn.title = '停止本次评估';
+    btn.title = '停止本次运行';
     btn.classList.add('stop');
     btn.disabled = false;
   } else {
@@ -1061,7 +1266,7 @@ function stopPendingAll() {
     const wrap = document.createElement('div');
     wrap.className = 'msg';
     if (req) wrap.appendChild(req.cloneNode(true));
-    wrap.appendChild(statusCard({ model: t.model, input_text: t.text }, '已停止', '本次评估已停止。', 'stopped'));
+    wrap.appendChild(statusCard({ model: t.model, input_text: t.text }, '已停止', '本次运行已停止。', 'stopped'));
     t.wrap.replaceWith(wrap);
   });
   loadSessions(viewingSessionId || currentSessionId).catch(() => {});
@@ -1074,14 +1279,11 @@ async function sendEval() {
   const text = $('input-text').value.trim();
   if (!text) return;
 
-  const skillId = $('ctx-skill').value || null;
+  const skillId = $('ctx-skill').value || null;   // 不选 Skill = 纯对话模式
   const personaId = $('ctx-persona').value || null;
   const model = $('ctx-model').value;
+  const useContext = $('use-context').checked;
 
-  if (!skillId) {
-    markSelect($('ctx-skill'), true);
-    return;
-  }
   if (!model) {
     markSelect($('ctx-model'), true);
     return;
@@ -1105,22 +1307,36 @@ async function sendEval() {
   const inner = $('msgs-inner');
   if (inner.querySelector('.empty-state')) inner.innerHTML = '';
 
+  // 上下文生效分割线：本轮开了带上下文、而会话内上一条记录没带，
+  // 在这条消息前画一条“以上已纳入上下文”，让用户明确模型从哪轮开始能看到历史。
+  // 会话第一条不画（没有上文可带）。
+  const lastMsg = inner.querySelector('.msg[data-uc]:last-of-type');
+  if (useContext && lastMsg && lastMsg.dataset.uc !== '1') {
+    const divider = document.createElement('div');
+    divider.className = 'ctx-divider';
+    divider.textContent = '⬆ 以上对话已纳入本轮上下文';
+    divider.classList.add('msg-enter');
+    inner.appendChild(divider);
+  }
+
   // 请求行 + 评估中占位卡（停止按钮在发送区）
   const wrap = document.createElement('div');
   wrap.className = 'msg';
+  wrap.dataset.uc = useContext ? '1' : '0';
+  wrap.classList.add('msg-enter');
   wrap.innerHTML = `
-    <div class="eval-request"><div class="er-label"><span>📝 评估请求</span></div>${esc(text)}</div>
+    <div class="eval-request"><div class="er-label"><span>📝 输入</span></div>${esc(text)}</div>
     <div class="eval-pending">
       <div class="report-card">
         <div class="rc-header">
-          <div class="rc-title"><span class="ai-badge">AI</span>评估中</div>
+          <div class="rc-title"><span class="ai-badge">AI</span>运行中</div>
           <span class="rc-time">${esc(model)}</span>
         </div>
         <div class="rc-section" style="padding:26px 20px">
           <div class="typing"><i></i><i></i><i></i></div>
-          <span class="hint">　模型正在按 Skill 标准逐轮评估，请稍候…</span>
+          <span class="hint">　模型正在${skillId ? '按 Skill 标准运行' : '思考'}，请稍候…</span>
           <span class="hint wait-time">已等待 0 秒</span>
-          <span class="hint slow-tip" style="display:none">　评估已超过 5 分钟，输出较慢，请再耐心等待一会…</span>
+          <span class="hint slow-tip" style="display:none">　运行已超过 5 分钟，输出较慢，请再耐心等待一会…</span>
         </div>
       </div>
     </div>`;
@@ -1145,19 +1361,38 @@ async function sendEval() {
 
   tasks.set(taskId, { ac, evalId, text, model, wrap, pending, timers: [tick, slowTimer] });
 
+  // 请求体提升为变量：needs_permission 弹确认后可带 confirm_scripts 重发
+  const uc = activeCfg();
+  const body = {
+    model,
+    base_url: uc && uc.base_url ? uc.base_url : null,
+    api_key: uc ? uc.api_key : null,
+    port: uc ? uc.port : null,
+    persona_id: personaId ? parseInt(personaId) : null,
+    skill_id: skillId ? parseInt(skillId) : null,
+    input_text: text,
+    session_id: sessionId,
+    eval_id: evalId,
+    use_context: useContext,
+  };
+
   try {
-    const uc = activeCfg();
-    const d = await api.post('/api/eval', {
-      model,
-      base_url: uc && uc.base_url ? uc.base_url : null,
-      api_key: uc ? uc.api_key : null,
-      port: uc ? uc.port : null,
-      persona_id: personaId ? parseInt(personaId) : null,
-      skill_id: skillId ? parseInt(skillId) : null,
-      input_text: text,
-      session_id: sessionId,
-      eval_id: evalId,
-    }, ac.signal);
+    let d = await api.post('/api/eval', body, ac.signal);
+    if (d.status === 'needs_permission') {
+      // Skill 包脚本未授权：弹确认（列脚本清单），拒绝则视同停止，同意则带授权重发
+      const names = (d.scripts || []).map(x => `• ${x.name} —— ${x.description || x.path}`).join('\n') || '（无脚本）';
+      const okRun = confirm(`Skill 包「${d.skill_name || ''}」将在运行时执行以下脚本：\n\n${names}\n\n脚本将在本机运行，请确认包来源可信。同意后本次运行立即执行；如需长期授权可在设置页操作。`);
+      if (!okRun) {
+        tasks.delete(taskId);
+        if (wrap.isConnected) {
+          wrap.replaceWith(statusCard({ model, input_text: text }, '已停止', '未授权脚本执行，本次运行已取消。', 'stopped'));
+          scrollBottom();
+        }
+        return;
+      }
+      body.confirm_scripts = true;
+      d = await api.post('/api/eval', body, ac.signal);
+    }
     tasks.delete(taskId);
     if (ac.signal.aborted) return;    // 停止后结果才回来：忽略
     // 期间用户已切到别的会话：结果已由后端落入原会话，这里不再动当前视图
@@ -1170,9 +1405,10 @@ async function sendEval() {
       id: d.id, input_text: text, output_text: d.output,
       eval_at: d.eval_at, model, status: d.status || 'completed',
       skill_name: d.skill_name, persona_name: d.persona_name, feedback: null,
+      exec_trace: d.exec_trace, round_no: d.round_no, use_context: useContext ? 1 : 0,
     };
     if (wrap.isConnected) {
-      wrap.replaceWith(msgNode(ev));
+      wrap.replaceWith(msgNode(ev, { enter: true }));
       scrollBottom();
     } else {
       // 占位已被重绘（如切走又切回）：直接重载当前会话
@@ -1185,7 +1421,7 @@ async function sendEval() {
     if (ac.signal.aborted || e.name === 'AbortError') return;  // 停止路径由 stopPendingAll 渲染
     // 失败：展示后端错误信息 + 重评入口（服务端已把该记录置为 failed）
     if (currentSessionId === sessionId && wrap.isConnected) {
-      wrap.replaceWith(statusCard({ model, input_text: text }, '评估失败',
+      wrap.replaceWith(statusCard({ model, input_text: text }, '运行失败',
         e.message || '模型调用失败，请检查网关配置后重试。', 'failed'));
       scrollBottom();
       await loadSessions(viewingSessionId);
@@ -1257,7 +1493,7 @@ async function loadSessions(activeId) {
           : '';
       item.innerHTML = `
         <div class="s-body">
-          <div class="s-title">${esc(s.title || '未命名评估')}</div>
+          <div class="s-title">${esc(s.title || '未命名会话')}</div>
           <div class="s-meta">${fmtTime(s.created_at)} · ${esc(s.model || '')}</div>
         </div>
         ${stFlags}${badge}
@@ -1290,7 +1526,7 @@ async function loadSessions(activeId) {
       };
       item.querySelector('[data-act=del]').onclick = async (e) => {
         e.stopPropagation();
-        if (!confirm(`确定删除会话「${s.title || '未命名评估'}」？其中 ${s.total} 条评估记录将一并删除。`)) return;
+        if (!confirm(`确定删除会话「${s.title || '未命名会话'}」？其中 ${s.total} 条运行记录将一并删除。`)) return;
         try {
           await api.del(`/api/sessions/${s.session_id}`);
           forgetSession(s.session_id);
@@ -1311,18 +1547,21 @@ async function loadCtxOptions() {
   try {
     const d = await api.get('/api/skills');
     const sel = $('ctx-skill');
-    sel.innerHTML = '<option value="">请选择</option>';
+    sel.innerHTML = '<option value="">💬 纯对话（不用 Skill）</option>';
     d.skills.forEach(s => {
       const o = document.createElement('option');
-      o.value = s.id; o.textContent = s.name + (s.is_default ? '（默认）' : '');
+      let label = s.is_package ? '📦 ' + s.name : s.name;
+      if (s.is_default) label += '（默认）';
+      if (s.is_package && !s.scripts_authorized) label += '（脚本未授权）';
+      o.value = s.id; o.textContent = label;
       sel.appendChild(o);
     });
   } catch (e) { /* 忽略 */ }
-  // 人设
+  // System Prompt
   try {
     const d = await api.get('/api/personas');
     const sel = $('ctx-persona');
-    sel.innerHTML = '<option value="">请选择（可选）</option>';
+    sel.innerHTML = '<option value="">（可选）</option>';
     d.personas.forEach(s => {
       const o = document.createElement('option');
       o.value = s.id; o.textContent = s.name + (s.is_default ? '（默认）' : '');
@@ -1584,7 +1823,7 @@ $('btn-test-chat').onclick = async () => {
   } finally { setLoading(btn, false); }
 };
 
-/* ================= 设置页：人设 ================= */
+/* ================= 设置页：System Prompt ================= */
 let personaCache = [];
 
 async function loadPersonas() {
@@ -1598,7 +1837,7 @@ async function loadPersonas() {
 function renderPersonaList() {
   const box = $('persona-list');
   if (!personaCache.length) {
-    box.innerHTML = '<div class="empty-tip">暂无已保存的人设</div>';
+    box.innerHTML = '<div class="empty-tip">暂无已保存的 System Prompt</div>';
     return;
   }
   box.innerHTML = '';
@@ -1621,7 +1860,7 @@ function renderPersonaList() {
         setStatus($('persona-status'), `正在编辑「${p.name}」，修改后点击保存即更新`, 'warn');
       };
       row.querySelector('[data-act=del]').onclick = async () => {
-        if (!confirm(`确定删除人设「${p.name}」？`)) return;
+        if (!confirm(`确定删除 System Prompt「${p.name}」？`)) return;
         try {
           await api.del(`/api/personas/${p.id}`);
           setStatus($('persona-status'), '已删除', 'ok');
@@ -1636,17 +1875,17 @@ function renderPersonaList() {
 $('btn-save-persona').onclick = async () => {
   const name = $('persona-name').value.trim();
   const content = $('persona-text').value.trim();
-  if (!name || !content) { setStatus($('persona-status'), '人设名称和内容都不能为空', 'err'); return; }
+  if (!name || !content) { setStatus($('persona-status'), 'System Prompt 名称和内容都不能为空', 'err'); return; }
   const editing = personaCache.find(p => p.name === name);
   const btn = $('btn-save-persona');
   setLoading(btn, true, '保存中...');
   try {
     if (editing) {
       await api.put(`/api/personas/${editing.id}`, { name, content });
-      setStatus($('persona-status'), `✅ 已更新人设「${name}」`, 'ok');
+      setStatus($('persona-status'), `✅ 已更新 System Prompt「${name}」`, 'ok');
     } else {
       await api.post('/api/personas', { name, content });
-      setStatus($('persona-status'), `✅ 已保存人设「${name}」`, 'ok');
+      setStatus($('persona-status'), `✅ 已保存 System Prompt「${name}」`, 'ok');
     }
     $('persona-name').value = ''; $('persona-text').value = '';
     await Promise.all([loadPersonas(), loadCtxOptions()]);
@@ -1669,17 +1908,19 @@ async function loadSkills() {
     const d = await api.get('/api/skills');
     skillCache = d.skills;
     renderSkillList();
+    renderPackageList();
   } catch (e) { setStatus($('skill-status'), e.message, 'err'); }
 }
 
 function renderSkillList() {
   const box = $('skill-list');
-  if (!skillCache.length) {
+  const rows = skillCache.filter(s => !s.is_package);
+  if (!rows.length) {
     box.innerHTML = '<div class="empty-tip">暂无已上传的 Skill</div>';
     return;
   }
   box.innerHTML = '';
-  skillCache.forEach(s => {
+  rows.forEach(s => {
     const locked = !!s.is_default;
     const row = document.createElement('div');
     row.className = 'list-row';
@@ -1706,6 +1947,68 @@ function renderSkillList() {
           setStatus($('skill-status'), '已删除', 'ok');
           await Promise.all([loadSkills(), loadCtxOptions()]);
         } catch (e) { setStatus($('skill-status'), e.message, 'err'); }
+      };
+    }
+    box.appendChild(row);
+  });
+}
+
+/* ================= 设置页：复杂 Skill 包 ================= */
+function renderPackageList() {
+  const box = $('pkg-list');
+  const rows = skillCache.filter(s => s.is_package);
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty-tip">暂无已上传的 Skill 包</div>';
+    return;
+  }
+  box.innerHTML = '';
+  rows.forEach(s => {
+    const scripts = [];
+    try {
+      const arr = typeof s.scripts_json === 'string' ? JSON.parse(s.scripts_json) : s.scripts_json;
+      if (Array.isArray(arr)) scripts.push(...arr);
+    } catch (e) { /* 忽略解析失败 */ }
+    const authorized = !!s.scripts_authorized;
+    const row = document.createElement('div');
+    row.className = 'list-row';
+    row.innerHTML = `
+      <div class="lr-main">
+        <div class="lr-name">📦 ${esc(s.name)}
+          <span class="${authorized ? 'default-badge' : 'warn-badge'}">${authorized ? '已授权' : '脚本未授权'}</span>
+        </div>
+        <div class="lr-meta">${scripts.length} 个脚本：${esc(scripts.map(x => x.name).join('、') || '—')}</div>
+      </div>
+      <div class="lr-btns">
+        <button class="btn ghost small" data-act="view">预览</button>
+        ${authorized ? '' : '<button class="btn small" data-act="auth">授权脚本</button>'}
+        <button class="btn danger small" data-act="del">删除</button>
+      </div>`;
+    row.querySelector('[data-act=view]').onclick = () => {
+      $('preview-title').textContent = `Skill 包预览：${s.name}（SKILL.md）`;
+      $('preview-content').textContent = s.content;
+      $('modal-preview').classList.add('show');
+    };
+    const authBtn = row.querySelector('[data-act=auth]');
+    if (authBtn) {
+      authBtn.onclick = async () => {
+        const names = scripts.map(x => `• ${x.name} —— ${x.description || x.path}`).join('\n') || '（无脚本）';
+        if (!confirm(`授权该 Skill 包在运行时执行以下脚本？\n\n${names}\n\n脚本将在本机运行，请确认包来源可信。`)) return;
+        try {
+          await api.post(`/api/skills/${s.id}/authorize`, {});
+          setStatus($('pkg-status'), `✅ 已授权「${s.name}」的脚本执行`, 'ok');
+          await Promise.all([loadSkills(), loadCtxOptions()]);
+        } catch (e) { setStatus($('pkg-status'), e.message, 'err'); }
+      };
+    }
+    const delBtn = row.querySelector('[data-act=del]');
+    if (delBtn) {
+      delBtn.onclick = async () => {
+        if (!confirm(`确定删除 Skill 包「${s.name}」？包内脚本文件会一并删除。`)) return;
+        try {
+          await api.del(`/api/skills/${s.id}`);
+          setStatus($('pkg-status'), '已删除', 'ok');
+          await Promise.all([loadSkills(), loadCtxOptions()]);
+        } catch (e) { setStatus($('pkg-status'), e.message, 'err'); }
       };
     }
     box.appendChild(row);
@@ -1754,6 +2057,52 @@ $('btn-save-skill').onclick = async () => {
     await Promise.all([loadSkills(), loadCtxOptions()]);
   } catch (e) {
     setStatus($('skill-status'), '❌ ' + e.message, 'err');
+  } finally { setLoading(btn, false); }
+};
+
+/* Skill 包上传（zip） */
+const pkgZone = $('pkg-zone');
+const pkgInput = $('pkg-file');
+pkgZone.onclick = () => pkgInput.click();
+pkgZone.addEventListener('dragover', (e) => { e.preventDefault(); pkgZone.style.borderColor = 'var(--brand)'; });
+pkgZone.addEventListener('dragleave', () => { pkgZone.style.borderColor = ''; });
+pkgZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  pkgZone.style.borderColor = '';
+  if (e.dataTransfer.files.length) {
+    pkgInput.files = e.dataTransfer.files;
+    $('pkg-zone-text').textContent = '📦 ' + e.dataTransfer.files[0].name;
+    $('pkg-zone-text').className = 'fz-file';
+  }
+});
+pkgInput.addEventListener('change', () => {
+  if (pkgInput.files.length) {
+    $('pkg-zone-text').textContent = '📦 ' + pkgInput.files[0].name;
+    $('pkg-zone-text').className = 'fz-file';
+  }
+});
+
+$('btn-save-pkg').onclick = async () => {
+  const name = $('pkg-name').value.trim();
+  const file = pkgInput.files[0];
+  if (!name) { setStatus($('pkg-status'), '请填写包名称', 'err'); return; }
+  if (!file) { setStatus($('pkg-status'), '请选择要上传的 zip 包', 'err'); return; }
+  if (!/\.zip$/i.test(file.name)) { setStatus($('pkg-status'), '仅支持 .zip 格式的 Skill 包', 'err'); return; }
+  const fd = new FormData();
+  fd.append('name', name);
+  fd.append('file', file);
+  const btn = $('btn-save-pkg');
+  setLoading(btn, true, '上传中...');
+  try {
+    const d = await api.post('/api/skills/package', fd);
+    setStatus($('pkg-status'), `✅ 已保存 Skill 包「${name}」，含 ${d.scripts.length} 个脚本。运行前需先授权脚本执行`, 'ok');
+    $('pkg-name').value = '';
+    pkgInput.value = '';
+    $('pkg-zone-text').textContent = '点击选择或拖入 zip 包';
+    $('pkg-zone-text').className = 'fz-text';
+    await Promise.all([loadSkills(), loadCtxOptions()]);
+  } catch (e) {
+    setStatus($('pkg-status'), '❌ ' + e.message, 'err');
   } finally { setLoading(btn, false); }
 };
 

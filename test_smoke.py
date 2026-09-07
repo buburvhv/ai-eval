@@ -1,14 +1,48 @@
 # -*- coding: utf-8 -*-
 """端到端冒烟测试：起一个 mock 模型网关，验证各 API 流程"""
 import json
+import sys
 import threading
 import time
+
+# Windows 控制台默认 GBK：轨迹里可能有替换符，重配 stdout 避免打印崩
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 import urllib.request
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # ---- mock 模型网关（OpenAI 兼容：GET /v1/models + POST /v1/chat/completions）----
 CAPTURED = []   # 记录每次 chat/completions 请求体，用于校验 prompt 协议
+
+# 每模型剧本：模型名 → 回复列表（按请求次序弹出，用尽或未登记的模型回落默认 JSON）
+SCRIPTED = {}
+
+def _default_reply():
+    # 模拟 SKILL.md 约定的六维 JSON 输出（含围栏与前后杂讯，模拟真实模型行为）
+    payload = {
+        "overall_issue": "整体缺乏真人感和人设引入，推进过于生硬",
+        "dimensions": [
+            {"name": "意图识别", "score": 1, "max_score": 2, "issue": "第一轮未正确识别用户意图"},
+            {"name": "内容价值", "score": 2, "max_score": 2, "issue": ""},
+            {"name": "情绪价值", "score": 0, "max_score": 2, "issue": "第二轮否定用户感受，共情不足"},
+            {"name": "真人感", "score": 1, "max_score": 2, "issue": "口语感弱，像在背书"},
+            {"name": "人设匹配度", "score": 2, "max_score": 2, "issue": ""},
+            {"name": "自然延展", "score": 2, "max_score": 2, "issue": ""},
+        ],
+        "total_score": 99,
+        "max_score": 12,
+        "main_issues": [
+            {"dimension": "意图识别", "problem_type": "意图偏离", "severity": 1,
+             "round": 1, "evidence": "用户询问烦恼模型只回应'遇到什么事'", "description": "第1轮未定位用户主意图"},
+            {"dimension": "情绪价值", "problem_type": "否定用户感受", "severity": 2,
+             "round": 2, "evidence": "用户说不想失去他，模型回应'这根本不是啥大事'", "description": "第2轮直接否定用户感受"},
+        ],
+        "suggestions": ["先共情再推进对话", "减少连珠炮式追问，一次只问一个问题"],
+    }
+    return "评估说明（杂讯）...\n```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```\n（完）"
 
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
@@ -45,28 +79,11 @@ class H(BaseHTTPRequestHandler):
                 pass
             if "slow" in model:
                 time.sleep(5)
-            # 模拟 SKILL.md 约定的六维 JSON 输出（含围栏与前后杂讯，模拟真实模型行为）
-            payload = {
-                "overall_issue": "整体缺乏真人感和人设引入，推进过于生硬",
-                "dimensions": [
-                    {"name": "意图识别", "score": 1, "max_score": 2, "issue": "第一轮未正确识别用户意图"},
-                    {"name": "内容价值", "score": 2, "max_score": 2, "issue": ""},
-                    {"name": "情绪价值", "score": 0, "max_score": 2, "issue": "第二轮否定用户感受，共情不足"},
-                    {"name": "真人感", "score": 1, "max_score": 2, "issue": "口语感弱，像在背书"},
-                    {"name": "人设匹配度", "score": 2, "max_score": 2, "issue": ""},
-                    {"name": "自然延展", "score": 2, "max_score": 2, "issue": ""},
-                ],
-                "total_score": 99,
-                "max_score": 12,
-                "main_issues": [
-                    {"dimension": "意图识别", "problem_type": "意图偏离", "severity": 1,
-                     "round": 1, "evidence": "用户询问烦恼模型只回应'遇到什么事'", "description": "第1轮未定位用户主意图"},
-                    {"dimension": "情绪价值", "problem_type": "否定用户感受", "severity": 2,
-                     "round": 2, "evidence": "用户说不想失去他，模型回应'这根本不是啥大事'", "description": "第2轮直接否定用户感受"},
-                ],
-                "suggestions": ["先共情再推进对话", "减少连珠炮式追问，一次只问一个问题"],
-            }
-            content = "评估说明（杂讯）...\n```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```\n（完）"
+            # 剧本模型：按请求次序弹出，用尽回落默认
+            if model in SCRIPTED and SCRIPTED[model]:
+                content = SCRIPTED[model].pop(0)
+            else:
+                content = _default_reply()
             self._json({"choices": [{"message": {"role": "assistant", "content": content}}]})
         else:
             self._json({"error": {"message": "not found"}}, 404)
@@ -236,7 +253,7 @@ msgs = cap.get("messages", [])
 sys_msg = next((m["content"] for m in msgs if m.get("role") == "system"), "")
 user_msg = next((m["content"] for m in msgs if m.get("role") == "user"), "")
 check("prompt system skill-only rule", "唯一的评分规则" in sys_msg, sys_msg[:80])
-check("prompt boundaries", all(t in user_msg for t in ("【评估标准（skill）】", "【用户人设】", "【待评估信息】")), user_msg[:80])
+check("prompt boundaries", all(t in user_msg for t in ("【评估标准（skill）】", "【System Prompt】", "【待评估信息】")), user_msg[:80])
 check("prompt has skill content", "问候语" in user_msg, "")
 check("prompt has persona content", "临时人设内容" in user_msg, "")
 check("prompt has input content", "临时测试" in user_msg, "")
@@ -309,6 +326,270 @@ check("failed record persisted with error", row and row["status"] == "failed" an
 # 17. 统计包含终态
 s, d = call("GET", "/api/evals/stats")
 check("stats has failed/aborted", s == 200 and d["failed"] >= 1 and d["aborted"] >= 1, d)
+
+# ============ 18. 复杂 Skill 包全链路 ============
+import zipfile as _zf
+
+
+def make_zip(files: dict) -> bytes:
+    """内存构造 zip 包：{相对路径: 内容(bytes/str)}"""
+    buf = io.BytesIO()
+    with _zf.ZipFile(buf, "w", _zf.ZIP_DEFLATED) as z:
+        for path, data in files.items():
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            z.writestr(path, data)
+    return buf.getvalue()
+
+
+def post_package(name: str, raw: bytes):
+    boundary = "----pkgboundary"
+    body = io.BytesIO()
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(f'Content-Disposition: form-data; name="name"\r\n\r\n{name}\r\n'.encode())
+    body.write(f"--{boundary}\r\n".encode())
+    body.write(f'Content-Disposition: form-data; name="file"; filename="pkg.zip"\r\n'.encode())
+    body.write(b"Content-Type: application/zip\r\n\r\n")
+    body.write(raw)
+    body.write(f"\r\n--{boundary}--\r\n".encode())
+    req = urllib.request.Request(BASE + "/api/skills/package", data=body.getvalue(), method="POST",
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.status, json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read().decode())
+
+
+PKG_MD = """---
+name: echo-skill
+description: 回显上下文的测试 Skill 包
+scripts:
+  - name: echo
+    path: scripts/echo.py
+    description: 回显 stdin 中的输入文本
+    timeout: 10
+---
+
+# 回显评估标准
+
+1. 调用 echo 脚本核对待评估文本
+2. 按六维标准输出 JSON 报告
+"""
+
+ECHO_PY = (
+    "# -*- coding: utf-8 -*-\n"
+    "import json, sys\n"
+    "ctx = json.load(sys.stdin)\n"
+    "print('脚本收到待评估文本：' + ctx.get('input_text', ''))\n"
+)
+
+# 18.1 上传校验：缺 SKILL.md → 400
+s, d = post_package("缺主文件包", make_zip({"scripts/echo.py": ECHO_PY}))
+check("package missing SKILL.md -> 400", s == 400, (s, d))
+
+# 18.2 zip-slip：路径含 .. → 400
+s, d = post_package("越界路径包", make_zip({
+    "SKILL.md": PKG_MD, "scripts/echo.py": ECHO_PY, "../evil.py": "print('evil')"}))
+check("package zip-slip -> 400", s == 400, (s, d))
+
+# 18.3 声明的脚本缺失 → 400
+bad_md = PKG_MD.replace("path: scripts/echo.py", "path: scripts/no_such.py")
+s, d = post_package("脚本缺失包", make_zip({"SKILL.md": bad_md}))
+check("package declared script missing -> 400", s == 400, (s, d))
+
+# 18.4 正常上传
+pkg_name = f"回显评估包{uuid.uuid4().hex[:6]}"
+s, d = post_package(pkg_name, make_zip({"SKILL.md": PKG_MD, "scripts/echo.py": ECHO_PY}))
+check("package upload", s == 200 and len(d.get("scripts", [])) == 1, (s, d))
+s, d = call("GET", "/api/skills")
+pkg = next((k for k in d["skills"] if k.get("name") == pkg_name and k.get("is_package")), None)
+check("package listed with is_package", pkg is not None and pkg.get("scripts_authorized") == 0, pkg)
+
+# 18.5 未授权评估：返回 needs_permission，不落库
+s, d = call("POST", "/api/eval", {
+    "model": "mock-pkg", "skill_id": pkg["id"], "input_text": "权限门测试"})
+check("needs_permission returned", s == 200 and d.get("status") == "needs_permission"
+      and len(d.get("scripts", [])) == 1, d)
+s, d = call("GET", "/api/evals")
+leak = next((x for x in d["evals"] if x["input_text"] == "权限门测试"), None)
+check("needs_permission not persisted", leak is None, leak)
+
+# 18.6 剧本模型：先 INVOKE 调脚本，喂回结果后输出最终 JSON
+final_payload = {
+    "overall_issue": "回显核对完成",
+    "dimensions": [{"name": "意图识别", "score": 2, "max_score": 2, "issue": ""}],
+    "main_issues": [], "suggestions": ["保持现状"],
+}
+SCRIPTED["mock-pkg"] = [
+    "我先调用脚本核对文本。\n[INVOKE:echo]",
+    "```json\n" + json.dumps(final_payload, ensure_ascii=False) + "\n```",
+]
+s, d = call("POST", "/api/eval", {
+    "model": "mock-pkg", "skill_id": pkg["id"], "input_text": "你好世界",
+    "confirm_scripts": True}, timeout=90)
+trace = d.get("exec_trace") or []
+check("package eval completed with trace", s == 200 and d.get("status") == "completed"
+      and len(trace) == 1, d)
+check("trace exit 0 + utf-8 stdout", trace and trace[0].get("exit_code") == 0
+      and "你好世界" in (trace[0].get("stdout_tail") or ""), trace)
+# 消息序列：system 含脚本清单附录；第二轮请求含 assistant INVOKE 与脚本结果回喂
+pkg_reqs = [c for c in CAPTURED if c.get("model") == "mock-pkg"]
+check("pkg two rounds captured", len(pkg_reqs) == 2, len(pkg_reqs))
+if len(pkg_reqs) == 2:
+    r1_sys = next((m["content"] for m in pkg_reqs[0]["messages"] if m.get("role") == "system"), "")
+    r2 = pkg_reqs[1]["messages"]
+    r2_assistant = next((m["content"] for m in r2 if m.get("role") == "assistant"), "")
+    r2_user = next((m["content"] for m in r2 if m.get("role") == "user" and "脚本执行结果" in m.get("content", "")), "")
+    check("system has script addendum", "echo" in r1_sys and "INVOKE" in r1_sys, r1_sys[:100])
+    check("round2 has assistant invoke", "[INVOKE:echo]" in r2_assistant, r2_assistant[:80])
+    check("round2 has script result feed", "脚本执行结果" in r2_user and "你好世界" in r2_user, (r2_user or "")[:120])
+
+# 18.7 脚本超时：timeout:1 + sleep 5 → 轨迹记 exit -1
+TO_MD = PKG_MD.replace("timeout: 10", "timeout: 1")
+TO_PY = "import time\ntime.sleep(5)\n"
+to_name = f"超时评估包{uuid.uuid4().hex[:6]}"
+s, d = post_package(to_name, make_zip({"SKILL.md": TO_MD, "scripts/echo.py": TO_PY}))
+check("timeout package upload", s == 200, (s, d))
+s, d = call("GET", "/api/skills")
+to_pkg = next((k for k in d["skills"] if k.get("name") == to_name), None)
+SCRIPTED["mock-to"] = [
+    "[INVOKE:echo]",
+    "```json\n" + json.dumps(final_payload, ensure_ascii=False) + "\n```",
+]
+s, d = call("POST", "/api/eval", {
+    "model": "mock-to", "skill_id": to_pkg["id"], "input_text": "超时测试",
+    "confirm_scripts": True}, timeout=90)
+to_trace = d.get("exec_trace") or []
+check("timeout recorded in trace", s == 200 and to_trace and to_trace[0].get("exit_code") == -1
+      and "超时" in (to_trace[0].get("stderr_tail") or ""), to_trace)
+
+# 18.8 包删除：列表消失；再次上传同名包应成功（目录名带时间戳不冲突）
+s, d = call("DELETE", f"/api/skills/{pkg['id']}")
+check("package delete ok", s == 200, (s, d))
+s, d = call("GET", "/api/skills")
+gone = next((k for k in d["skills"] if k.get("id") == pkg["id"]), None)
+check("package gone from list", gone is None, gone)
+for k in call("GET", "/api/skills")[1]["skills"]:
+    if k.get("name") == to_name:
+        call("DELETE", f"/api/skills/{k['id']}")
+
+# 18.9 文本 Skill 零回归：既有 CSV 导出仍可用（18 前全部断言已过，此处再验一次导出）
+with _ur.urlopen(BASE + "/api/evals/export", timeout=30) as r:
+    body = r.read().decode("utf-8").lstrip("﻿")
+    check("export csv still works after package tests", r.status == 200 and "人工标注" in body, body[:100].encode("gbk", "replace").decode("gbk"))
+
+# ---------- 19. 多轮上下文（use_context + round_no） ----------
+print("\n-- 19. 多轮上下文 --")
+
+mt_reply = _default_reply()  # mock-mt 未登记剧本，每轮回落默认 JSON 回复
+
+def mt_reqs():
+    return [c for c in CAPTURED if c.get("model") == "mock-mt"]
+
+# 19.1 第一轮：无历史可带，round_no=1，messages 仅 system+user
+s, d = call("POST", "/api/eval", {
+    "model": "mock-mt", "skill_id": sid, "input_text": "多轮第一问 甲"})
+check("mt r1 completed", s == 200 and d.get("status") == "completed", (s, d.get("status")))
+mt_sid = d.get("session_id", "")
+check("mt r1 round_no=1", d.get("round_no") == 1, d.get("round_no"))
+r1 = mt_reqs()[-1]["messages"]
+check("mt r1 messages bare", len(r1) == 2 and r1[0]["role"] == "system" and r1[1]["role"] == "user", len(r1))
+
+# 19.2 第二轮 use_context=True：messages = system + user(历史输入) + assistant(历史结果) + user(本轮)
+s, d = call("POST", "/api/eval", {
+    "model": "mock-mt", "skill_id": sid, "input_text": "多轮第二问 乙",
+    "session_id": mt_sid, "use_context": True})
+check("mt r2 completed round_no=2", s == 200 and d.get("round_no") == 2, (s, d.get("round_no")))
+r2 = mt_reqs()[-1]["messages"]
+check("mt r2 has history", len(r2) == 4 and [m["role"] for m in r2] == ["system", "user", "assistant", "user"],
+      [m["role"] for m in r2])
+check("mt r2 history user is material-only",
+      r2[1]["content"].startswith("【待评估信息】") and "多轮第一问 甲" in r2[1]["content"]
+      and "【评估标准" not in r2[1]["content"], r2[1]["content"][:60])
+check("mt r2 history assistant is prev output", "整体缺乏真人感" in r2[2]["content"], r2[2]["content"][:60])
+check("mt r2 final user full prompt",
+      "多轮第二问 乙" in r2[3]["content"] and "【评估标准（skill）】" in r2[3]["content"], r2[3]["content"][:80])
+
+# 19.3 第三轮不带 use_context：保持独立（仅 system+user），round_no 继续递增
+s, d = call("POST", "/api/eval", {
+    "model": "mock-mt", "skill_id": sid, "input_text": "多轮第三问 丙", "session_id": mt_sid})
+check("mt r3 round_no=3", s == 200 and d.get("round_no") == 3, d.get("round_no"))
+r3 = mt_reqs()[-1]["messages"]
+check("mt r3 no history when off", len(r3) == 2, len(r3))
+
+# 19.4 会话详情返回 round_no 序列（同秒插入也须按落库顺序）
+s, d = call("GET", f"/api/sessions/{mt_sid}/evals")
+rnos = [e.get("round_no") for e in d.get("evals", [])]
+check("mt session rounds 1..3", s == 200 and rnos == [1, 2, 3], rnos)
+
+# 19.5 轮数上限：连发 6 轮（会话共 9 条），最后一轮只带最近 5 轮历史
+for i in range(4, 10):
+    s, d = call("POST", "/api/eval", {
+        "model": "mock-mt", "skill_id": sid, "input_text": f"多轮第{i}问",
+        "session_id": mt_sid, "use_context": True})
+check("mt r9 completed round_no=9", d.get("round_no") == 9, d.get("round_no"))
+last = mt_reqs()[-1]["messages"]
+roles = [m["role"] for m in last]
+check("mt clipped to 5 rounds",
+      len(last) == 12 and roles == ["system"] + ["user", "assistant"] * 5 + ["user"], len(last))
+check("mt oldest kept is round 4",
+      "多轮第4问" in last[1]["content"] and "多轮第三问" not in last[1]["content"], last[1]["content"][:60])
+check("mt newest history is round 8", "多轮第8问" in last[-3]["content"], last[-3]["content"][:60])
+check("mt final user is round 9", "多轮第9问" in last[-1]["content"], last[-1]["content"][:60])
+
+# 19.6 清理多轮测试会话
+s, d = call("DELETE", f"/api/sessions/{mt_sid}")
+check("mt session cleanup", s == 200, s)
+
+# ---------- 20. Skill 可选：纯对话模式 ----------
+print("\n-- 20. 纯对话模式（不选 Skill） --")
+
+def chat_reqs():
+    return [c for c in CAPTURED if c.get("model") == "mock-chat"]
+
+# 20.1 无 Skill + 无 System Prompt：messages 只有裸 user（无 system），不再包评估协议
+s, d = call("POST", "/api/eval", {
+    "model": "mock-chat", "input_text": "纯对话第一条：你好"})
+check("chat no-skill completed", s == 200 and d.get("status") == "completed", (s, d.get("status")))
+chat_sid = d.get("session_id", "")
+check("chat skill_name", d.get("skill_name") == "（纯对话）", d.get("skill_name"))
+m = chat_reqs()[-1]["messages"]
+check("chat bare messages no system",
+      [x["role"] for x in m] == ["user"] and m[0]["content"] == "纯对话第一条：你好", m)
+
+# 20.2 无 Skill + System Prompt：persona 直接作为 system 消息
+s, d = call("POST", "/api/eval", {
+    "model": "mock-chat", "persona_id": pid, "input_text": "第二条带人设",
+    "session_id": chat_sid})
+check("chat with persona completed", s == 200, (s, d.get("status")))
+m = chat_reqs()[-1]["messages"]
+check("chat persona as system",
+      m[0]["role"] == "system" and "客服" in m[0]["content"]
+      and m[-1]["content"] == "第二条带人设", [x["role"] for x in m])
+check("chat no eval wrapper", "【评估标准" not in m[-1]["content"] and "【待评估信息】" not in m[-1]["content"], m[-1]["content"][:60])
+
+# 20.3 无 Skill + 带上下文：历史为裸文本（不包【待评估信息】）；本轮未传 persona 故无 system
+s, d = call("POST", "/api/eval", {
+    "model": "mock-chat", "input_text": "第三条带上下文",
+    "session_id": chat_sid, "use_context": True})
+check("chat use_context round 3", s == 200 and d.get("round_no") == 3, d.get("round_no"))
+m = chat_reqs()[-1]["messages"]
+check("chat history plain text",
+      [x["role"] for x in m] == ["user", "assistant", "user", "assistant", "user"]
+      and m[0]["content"] == "纯对话第一条：你好", [x["role"] for x in m])
+
+# 20.4 use_context 落库（分割线渲染依据）：会话详情返回 use_context 字段
+s, d = call("GET", f"/api/sessions/{chat_sid}/evals")
+ucs = [(e.get("round_no"), e.get("use_context")) for e in d.get("evals", [])]
+check("chat use_context persisted", ucs == [(1, 0), (2, 0), (3, 1)], ucs)
+
+# 20.5 中途开上下文可读到单轮期的记录（20.3 已隐式验证：历史含第 1 条）
+check("chat context reads earlier rounds", m[0]["content"] == "纯对话第一条：你好", "")
+
+# 20.6 清理
+s, d = call("DELETE", f"/api/sessions/{chat_sid}")
+check("chat session cleanup", s == 200, s)
 
 print()
 print("TOTAL FAILURES:", len(fails), fails if fails else "")
